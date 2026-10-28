@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Davy's Quiet Machine continuation (local fork)
+
+For this authorized fork redesign, read the **newest section of [HANDOFF.md](HANDOFF.md)** before any work. It records the current branch, partial implementation, exact validation, private backup locations and device blocker. Preserve unrelated local add-on Gradle wrapper modifications.
+
+**Do not install the current APK on the identified Hisense Fire TV yet:** its active `HomeRedirectService` is absent from this branch, so an update would remove the existing Home-button route. Preserve that route and establish configuration/rollback recovery first; do not enable a replacement helper or change default Home without authorization. No updated APK has been installed. Signing compatibility alone is insufficient. Push only `origin` branch `feature/quiet-machine-rams-ui` in `davygit67/cleandavystv`.
+
+
 Instructions for coding agents (Claude Code, Codex, Gemini CLI, Cursor, Copilot and others) working in
 this repository. People should start with [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md);
 this file repeats their rules in the form an agent needs, and links to them for the detail.

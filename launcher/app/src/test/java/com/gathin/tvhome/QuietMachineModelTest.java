@@ -4,6 +4,12 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class QuietMachineModelTest {
+    @Test public void photographsBoundLandscapeAndPortraitAllocations() {
+        assertEquals(4, QuietMachineModel.sampleSize(4096, 2160));
+        assertEquals(8, QuietMachineModel.sampleSize(800, 8192));
+        assertEquals(1, QuietMachineModel.sampleSize(640, 480));
+        assertEquals(1, QuietMachineModel.sampleSize(-1, -1));
+    }
     @Test public void greetingsChangeAtLocalDayBoundaries() {
         assertEquals("Good night", QuietMachineModel.greeting(0));
         assertEquals("Good night", QuietMachineModel.greeting(4));

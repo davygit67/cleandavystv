@@ -87,6 +87,8 @@ keystore. APKs are not committed.
 
 ## Validation
 
+See the newest [local handoff](../HANDOFF.md) for the continuation build results and the installed Fire TV legacy Home-helper incompatibility. The current APK has not been installed; runtime acceptance remains outstanding.
+
 See the delivery report for the actual build, test and emulator results. Physical TV
 validation remains necessary for vendor HDMI behavior, hardware volume, settings
 handlers, accessibility-helper keys, screensaver timing and firmware brightness.

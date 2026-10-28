@@ -5,6 +5,12 @@ import java.util.Locale;
 /** Pure policies shared by the TV view and regression tests. */
 final class QuietMachineModel {
     private QuietMachineModel() { }
+    /** Bound both dimensions: a portrait theme must not allocate a very tall panorama. */
+    static int sampleSize(int width, int height) {
+        int sample = 1;
+        while (width / sample > 1024 || height / sample > 1024) sample *= 2;
+        return sample;
+    }
     static String greeting(int hour) {
         return hour >= 5 && hour < 12 ? "Good morning" : hour < 17 && hour >= 12 ? "Good afternoon"
                 : hour >= 17 && hour < 22 ? "Good evening" : "Good night";

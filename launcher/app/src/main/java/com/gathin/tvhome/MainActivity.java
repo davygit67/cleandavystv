@@ -900,6 +900,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .build(), vpnCallback);
         }
         if (!getPreferences(0).getBoolean("quiet_classic", false)) {
+            // Keep Classic alive for its existing launch/input logic, but isolate every descendant
+            // from drawing, accessibility and focus (including delayed Classic callbacks).
+            FrameLayout classicSurface = new FrameLayout(this);
+            while (root.getChildCount() > 0) {
+                View child = root.getChildAt(0);
+                root.removeView(child);
+                classicSurface.addView(child);
+            }
+            classicSurface.setVisibility(View.INVISIBLE);
+            classicSurface.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            classicSurface.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            root.addView(classicSurface, new FrameLayout.LayoutParams(-1, -1));
             quietMachine = new QuietMachineView(this, adapter, this::showInputs, () -> {
                 getPreferences(0).edit().putBoolean("quiet_classic", true).apply();
                 recreate();
@@ -1065,8 +1077,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (showStats) startStats();
         if (gameDay != null) gameDay.start();
-        sky.update();
-        wallpaperPlayer.start();
+        if (quietMachine == null) {
+            sky.update();
+            wallpaperPlayer.start();
+        }
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && diya != null) {
             diya.start();
@@ -1122,6 +1136,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *                 on a return to the same tiles it would only mark a change that didn't happen.
      */
     private void reloadApps(boolean animate, boolean rebuild, boolean entrance) {
+        if (quietMachine != null) {
+            if (rebuild) reloadTiles();
+            tilesReady = true;
+            quietMachine.focusDefault();
+            return;
+        }
         cancelPendingFocusScroll();
         RecyclerView.ViewHolder footer = grid.findViewHolderForAdapterPosition(adapter.appCount());
         final boolean restoreLibrary = adapter.isLibraryAt(adapter.appCount()) && footer != null
@@ -3204,6 +3224,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // keeps its usual place.
         boolean underGear = topMenu;
         View anchor = findViewById(underGear ? R.id.btnSettings : R.id.btnInputs);
+        if (quietMachine != null) anchor = quietMachine.inputAnchor();
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
 
