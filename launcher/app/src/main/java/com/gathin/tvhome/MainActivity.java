@@ -925,6 +925,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             quietReturn.setBackgroundColor(0xfff2f0e9); quietReturn.setPadding(16, 12, 16, 12);
             quietReturn.setFocusable(true);
             quietReturn.setOnClickListener(v -> { getPreferences(0).edit().putBoolean("quiet_classic", false).apply(); recreate(); });
+            quietReturn.setOnFocusChangeListener((v, f) -> v.setBackgroundColor(f ? 0xfff36b21 : 0xfff2f0e9));
+            // The grid keeps focus at its edges, so the way back is Right from the Settings pill (Up or Left returns).
+            btnSettings.setOnKeyListener((v, keyCode, event) -> {
+                if (keyCode != KeyEvent.KEYCODE_DPAD_RIGHT || rtlMenuBar) return pillKeys.onKey(v, keyCode, event);
+                if (event.getAction() == KeyEvent.ACTION_DOWN) quietReturn.requestFocus();
+                return true;
+            });
+            quietReturn.setOnKeyListener((v, keyCode, event) -> {
+                if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_LEFT) return false;
+                if (event.getAction() == KeyEvent.ACTION_DOWN) btnSettings.requestFocus();
+                return true;
+            });
             FrameLayout.LayoutParams qp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
             root.addView(quietReturn, qp);
         }

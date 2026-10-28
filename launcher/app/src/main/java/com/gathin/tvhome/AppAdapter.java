@@ -524,11 +524,16 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
-    /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
+    /** Quiet Machine's Home row: the configured tiles, in their saved order. */
     java.util.List<Entry> quietEntries() { return new ArrayList<>(items); }
 
-    void quietLaunch(Entry entry) { launch(entry); }
+    /** Quiet Machine's Library sorts by recently opened, so its launches are always noted. */
+    void quietLaunch(Entry entry) {
+        launch(entry);
+        if (entry.kind == Entry.APP && !cinematic) LastOpened.record(ctx, entry.pkg);
+    }
 
+    /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
     private void launch(Entry e) {
         if (e.kind == Entry.HOME_SETTINGS) {
             ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)

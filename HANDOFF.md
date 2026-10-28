@@ -1,200 +1,127 @@
-# Quiet Machine — local continuation checkpoint (28 October 2026)
+# Quiet Machine — handoff (28 October 2026, Claude Code session)
 
-**User requested an immediate handoff to Claude Code. This is unfinished, build-tested work; no updated APK was installed on the TV.**
+Fork `davygit67/cleandavystv`, branch `feature/quiet-machine-rams-ui`. Push only to origin's feature
+branch: never upstream, never main, never force. Older handoff text is in git history (`git log -p HANDOFF.md`).
+Leave the unrelated dirty Gradle wrapper files in `addons/ad-blocking`, `addons/airplay-status` and
+`addons/bluetooth-connect` alone: do not commit or revert them.
 
-## Start here
+## State: installed on the TV and checked there
 
-- Work only in `davygit67/cleandavystv`, branch `feature/quiet-machine-rams-ui`.
-- This continuation starts from `d0491fda`; use `git log -1` for the saved continuation commit.
-- Both origin (Davy's fork) and upstream are configured locally. Push ONLY origin's feature branch, never upstream/main, never force-push.
-- Read AGENTS.md, this newest section, docs/quiet-machine.md and the original brief. The old handoff below is historical.
-- Preserve unrelated pre-existing dirty Gradle wrapper files in `addons/ad-blocking`, `addons/airplay-status`, and `addons/bluetooth-connect`. Do not commit or revert them.
-- User authorized implementation, builds, tests, commits/pushes and safe in-place TV updates after target identification, backup and signing checks. No uninstall/disable, Home-default change, new remote helpers, firmware changes or unrelated settings changes.
+The redesign is installed **in place** on Davy's Hisense 55E6QF (Fire OS 8.1.8.0, Android 11 / SDK 30) as the
+debuggable build of this branch (versionCode 10). It is signed with the original key, which matches the old
+build. Stock default Home is still `com.amazon.tv.launcher/.ui.HomeActivity_vNext`, and nothing was disabled.
+No accessibility, screensaver or Home setting was changed.
 
-## Critical TV blocker — do not install yet
+### How the earlier "do not install" blocker was resolved
 
-The user identified a **Hisense 55E6QF**, Fire OS **8.1.8.0**, firmware **RS8180.3746N**. ADB reports model **AFTOLCBC82**, Android **11**, SDK **30**. Existing saved pairing worked via encrypted wireless ADB; discover its current port with `adb mdns services` and match the target privately. Do not put endpoints, serials or account/network information in git.
+The TV ran an older `com.gathin.tvhome` build (versionCode 2, from the separate `fire-tv-cleanup` tree), and
+its settings pointed at two components this branch lacked:
+`enabled_accessibility_services=com.gathin.tvhome/com.gathin.tvhome.HomeRedirectService` and
+`screensaver_components=com.gathin.tvhome/com.gathin.tvhome.PhotoDream`. The branch now declares both under the
+same names (`HomeRedirectService.java`, `PhotoDream.java`, `res/xml/home_redirect_service.xml`, manifest). An
+in-place update therefore keeps both settings pointing at working components. Installing turns nothing on.
+The redirect behaves as the old build did, except that it now sends a Home intent. PhotoDream shows the
+LA/USC/Florence pack in grayscale; the old twelve bundled photos would exceed the APK size gate.
 
-- Stock default Home is `com.amazon.tv.launcher/.ui.HomeActivity_vNext`, still enabled.
-- Installed `com.gathin.tvhome` is an older **versionCode 2 / versionName 2.0**, targetSdk 29, debug build, APK 8,655,818 bytes. This branch remains versionCode 10, targetSdk 34, minSdk 26.
-- **Enabled and bound accessibility service is `com.gathin.tvhome/com.gathin.tvhome.HomeRedirectService`. This branch does NOT declare that service; it has HomeKeyService instead. An update would remove the user's current Home-button path. Stop installation until preservation is concretely solved within the user's constraints. Do not silently enable a different helper or alter the default Home.**
-- Original helper source is available read-only in the adjacent `../fire-tv-cleanup/launcher/app/src/main/java/com/gathin/tvhome/HomeRedirectService.java`. No changes were made to that repository.
-- Signing mismatch with the default local key was detected. The matching original key was found under adjacent `.local-tools/android-user/debug.keystore`, verified against installed APK and copied privately. Build below uses that key, not the unrelated global key.
-- Current display: physical 3840x2160; existing override 1920x1080; density 320. Do not change these system settings without separate authorization.
-- No package install, Home launch, system setting change, force-stop, debloat, screenshot capture, or photo upload was performed in this continuation. No physical remote test yet.
-- Debugging remains enabled for continuation. Both TLS and plaintext ADB were advertised. Finish using the repository's debugging closure/port-verification procedure when device work is over; closure has NOT been verified.
+### Rollback, tested on the TV
 
-## Private local recovery files (gitignored)
+- The TV has `ro.debuggable=0`, so Android allows a downgrade only while the installed app is debuggable.
+  That is why the debug build is the one installed.
+- Drill done: `adb install -r -d backup/quiet-machine-20261028/previous.apk` succeeded (versionCode 2, Home
+  redirect bound, screensaver setting intact). Then `adb install -r app-debug.apk` went forward again
+  (versionCode 10, redirect bound, no crashed services, screensaver intact, stock Home unchanged).
+- UI rollback without reinstalling: Settings → Classic launcher. The way back is Right from Classic's Settings
+  pill, onto the "Quiet Machine" button.
+- Private recovery files (gitignored): `backup/quiet-machine-20261028/` (previous.apk, matching
+  original-debug.keystore, settings, package and accessibility records). Build signing goes through the private
+  `work/quiet-signing.gradle` init script.
 
-`backup/quiet-machine-20261028/` contains previous.apk, launcher-data.tar, package/property/disabled-package/settings/default-Home/accessibility records, original-debug.keystore (matching), and local-debug.keystore (nonmatching).
-The private archive was successfully read via run-as, 3,072 bytes; it contained cache/code_cache/shared_prefs directories with no preference files. External app-files path returned missing; broader Android/data listing was denied. **External theme/config recovery is not fully established; inspect with provider or app UID before installing.**
-The old APK has a lower versionCode: do not promise a simple downgrade rollback from a non-debug release. Establish and document a viable same-key recovery path first. Stock Home stays available.
+## Verified on the TV (adb, injected keys, screenshots kept locally only)
 
-## Code changes saved in this continuation
+- Home: time-aware greeting ("Good morning, Davy"), the date and 24-hour clock, a grayscale panorama with its
+  licence credit in the footer, and a green dot backed by a validated network. WATCH opens the real
+  HDMI 1/2/3 picker anchored under the tile. The Netflix tile opened Netflix.
+- The Home key, injected, goes through Amazon's home and the preserved HomeRedirectService back to Quiet
+  Machine Home with WATCH focused.
+- Photo: Up from any tile reaches the panorama. OK cycles LA → USC → Florence. The choice survived reinstalls
+  and restarts.
+- Library: the three-column grid with grayscale banners. Opening Files and pressing Back returned to the Files
+  card. Recent sorting moved it first, with "Opened 1 minute ago". The right grid edge stays put. Movies says
+  no catalog is connected.
+- Search: typing "hbo" finds HBO Max.
+- Control: volume 0–100. Fire OS ignores `setStreamVolume`, so the meter steps with `adjustStreamVolume`, the
+  same way the remote does. A read-back confirmed the level moved, and it was left at the original 5. Focus
+  Night visibly dims the launcher and Off restores it. Display reads 2160p, 3840 × 2160 · 60 Hz from the real
+  output mode. The device name and network dot are shown. Launcher preferences opens, and Back returns to its
+  button.
+- Dark mode is the default (the user asked for it). The Light mode / Dark mode button in Control switches it,
+  the choice is saved, and focus stays on the button. The TV was left in Dark.
+- Classic launcher: switching to it and back works. Its full original UI is intact.
+- Screensaver: started through `Somnambulator`, `mCurrentDreamName` was PhotoDream. It showed the grayscale
+  photograph and clock, and a key press woke it back to the launcher.
+- The photo pack was written only through `content://com.gathin.tvhome.theme/wallpapers/*.jpg`. No
+  `config.json` existed or was written.
 
-- MainActivity wraps the Classic surface in an invisible container blocking descendant focus/accessibility; skips Classic reload entrance and wallpaper startup while Quiet Machine is active. HDMI popup uses a visible Quiet Machine anchor.
-- Library uses RecyclerView/GridLayoutManager (existing dependency), a 48-entry icon cache with 64px icons loaded on demand; scans metadata without eagerly decoding every icon. Package refresh invalidates catalog/cache.
-- Photo cycling retains focused panorama instead of rebuilding Home. Truthful missing-photo panel; stale async results discarded; both image dimensions downsampled to <=1024. One new JVM test covers landscape/portrait bounds.
-- Home refresh attempts stable-tag focus restoration; filter tabs and Focus mode selections restore their selected control; focus search prevents escape to underlying Classic controls.
-- Volume changes synchronize via broadcast/resume, permission/vendor failures are caught, and OK on slider opens settings. Control body scrolls for taller text; Focus buttons enlarged.
-- Settings actions now use existing SystemSettings vendor fallback (important for Fire OS CTS dummy handlers).
-- No manifest, permissions, dependencies, SDK levels, install guards or CI changed. Photo credits/assets untouched.
-- **Review critically: native runtime/focus/grid-edge behavior and visual fidelity remain unverified.** Large-list runtime/memory measurements, saved-state across recreation, configured library component selection, honest CEC/fixed-volume handling and all sizing still need testing/refinement.
+## Not verified yet: needs Davy with the real remote
 
-## Actual latest validation
+- **A physical press of the remote's Home button.** Injected HOME worked, but AGENTS.md requires a real press
+  for helper-routed buttons.
+- A physical-remote pass of the D-pad at every edge. Up, Down, Left and Right were spot-checked with injected
+  keys on each screen, not exhaustively.
+- Picking an HDMI input, actually switching sources, and the Picture/Sound/Network/System tabs landing on
+  Fire OS's real settings pages (they go through `SystemSettings` fallbacks).
+- Boot behaviour: the redirect opens the launcher within 3 minutes of boot. Not rebooted in this session.
+- Idle-timeout screensaver: started by hand only.
+- 720p and 4K-density layouts: only this TV's 1920×1080 override at density 320 (a 960×540 dp canvas) was
+  seen. Large font scale was not tried, though Control scrolls.
+- Memory with a very large app list: about 50 apps here. Rows recycle and art is a 48-entry cache of small
+  bitmaps, but nothing was profiled.
+- The HDMI picker's last row sits low on screen (HDMI 3 partly below the fold; it scrolls). This is the
+  existing Classic popup, anchored under WATCH.
 
-- JDK 17, SDK platform 34/build-tools 34.0.0.
-- Final `testReleaseUnitTest lintRelease assembleRelease`: **BUILD SUCCESSFUL**, 1m21s.
-- **298 Java tests, zero failures/errors/skips.**
-- Lint: **0 errors, 101 warnings**.
-- APK **559,669 bytes**, below 589,824-byte gate.
-- Full Python suite launched and still running at urgent handoff; inspect `work/quiet-python.log` for final result. Do not reuse the old cloud suite's passing numbers as this run's result.
-- No implemented UI screenshots or emulator/TV runtime validation. Do not claim completion.
+## ADB is still open
 
-## Local build tools and commands
+Wireless debugging and network ADB remain **on**, deliberately, for the remote-control pass and further work.
+When that is done, close them as AGENTS.md says ("Close ADB afterwards"), and confirm with
+`tools/adb-closed.py <tv ip>` and the TLS port check.
 
-Tools are available read-only from adjacent `../fire-tv-cleanup/.local-tools/`:
-`jdk-17.0.20.1+1`, `android-sdk` (platform 34/build-tools 34.0.0), `platform-tools/adb.exe`.
-Private `work/quiet-signing.gradle` points debug signing at the backed-up matching original key; no build.gradle signing changes or global key replacement were made.
+## Build and test results (this session)
 
-PowerShell from repo root:
+- `testReleaseUnitTest lintRelease assembleRelease assembleDebug` with JDK 17 and SDK 34 / build-tools
+  34.0.0: BUILD SUCCESSFUL.
+- 303 JVM tests, 0 failures. Lint: 0 errors, 101 warnings.
+- Release APK 568,453 B, under the 589,824 B gate. The debug APK (installed) is about 2.36 MB.
+- Same signing certificate (SHA-256 `2fbba8ad…70a5`) on the debug and release builds and on the backed-up
+  installed APK.
+- Permissions are unchanged from upstream. There are no new dependencies. The manifest adds only the two
+  compatibility components.
+- Python suite on Windows: the failures are the same environment-only set that fails on the pre-branch
+  baseline `095b71ad` (POSIX shell, venv `bin/` paths, file permissions). This branch had broken
+  `test_agents_md` (AGENTS.md over 16 KiB) and `test_doc_addresses` (a home-folder path in this file). Both are
+  fixed, and both modules pass.
+
+## Commands (PowerShell, repo root)
+
 ```powershell
 $env:JAVA_HOME=(Resolve-Path '../fire-tv-cleanup/.local-tools/jdk-17.0.20.1+1').Path
 $env:ANDROID_HOME=(Resolve-Path '../fire-tv-cleanup/.local-tools/android-sdk').Path
-./launcher/gradlew.bat -p launcher -I "$pwd/work/quiet-signing.gradle" --no-daemon testReleaseUnitTest lintRelease assembleRelease
-./tools/venv/Scripts/python.exe -m unittest discover -s tests -v
+./launcher/gradlew.bat -p launcher -I "$pwd/work/quiet-signing.gradle" --no-daemon testReleaseUnitTest lintRelease assembleRelease assembleDebug
 ```
-Logs: `work/quiet-build-final.log`, `work/quiet-python.log`; lint/test reports under launcher/app/build/. All private artifacts stay out of commits. Recheck final APK signer before any installation.
 
-## Next work
+adb is `../fire-tv-cleanup/.local-tools/platform-tools/adb.exe`. Find the TV with `adb mdns services` and
+check that the model is AFTOLCBC82. In Git Bash, set `MSYS_NO_PATHCONV=1`, or device paths such as
+`/data/local/tmp` get rewritten. Install with `adb install -r launcher/app/build/outputs/apk/debug/app-debug.apk`.
+Afterwards check `dumpsys accessibility` (HomeRedirectService bound) and `settings get secure
+screensaver_components`.
 
-1. Inspect latest commit, dirty unrelated wrappers and running Python log. Review continuation diff and resolve any failures.
-2. Resolve legacy HomeRedirectService preservation and recoverable configuration/rollback before an in-place update. User explicitly prohibited new helpers/default-Home changes; ask only if the needed solution exceeds that authorization.
-3. Continue visual implementation against the supplied ivory/graphite/orange three-screen board; panorama photos are LA/USC/Florence, not Manhattan. Original full brief is at local attachment `C:/Users/davyt/.codex/attachments/e7965195-1db7-404c-b3d0-e3230d6a0d7b/Pasted text.txt`.
-4. Once safe, exercise actual Home/Library/Search/Control, app launches/return focus, every D-pad edge, OK/Back/Home, HDMI, settings, Classic recovery, idle screensaver, volume and persistence. Physical helper buttons require real presses. Merge photographs without replacing config.json. Capture actual screenshots and compare/refine.
-5. Finish tests, APK size/signature checks, truthful docs, commit/push ONLY fork feature branch. Close/debugging verify when done.
+## Code map
 
----
-
-# Historical cloud handoff (superseded by the local checkpoint above)
-
-# Quiet Machine — handoff to VS Code Codex
-
-## State at pause (28 October 2026)
-
-The user requested a pause and a committed handoff to continue locally with TV access.
-**This is a buildable implementation checkpoint, not a completed or TV-validated redesign.**
-
-- Repository: https://github.com/davygit67/cleandavystv
-- Branch: `feature/quiet-machine-rams-ui`
-- GitHub REST metadata confirmed `fork: true`, parent `Gathin23/cleanyourtv`.
-- Only `origin` pointing at Davy's fork is configured. Never push to upstream or merge
-  to main without an explicit request. No force push.
-- Read `AGENTS.md`, `docs/quiet-machine.md`, and the original user brief before continuing.
-- User wants the provided “02 / Quiet Machine” three-panel reference followed closely.
-  The reference was visible in chat, but no separate reference PNG was available as a
-  workspace file. Have the user attach it in the new VS Code conversation if needed.
-- Latest visual change: **LA, USC and Florence photographs**, replacing the initial
-  Manhattan request. Three licensed photos and attribution are in
-  `launcher/quiet-machine-wallpapers/`.
-- User authorized routine decisions and asked to stop repeated approval questions.
-  Sandbox execution approvals are separate from task authorization. Do not repeatedly
-  ask about decisions already authorized. User intends to continue with physical TV
-  access locally; inspect the actual target, backup state and signing key before any
-  installation. Do not infer that a connected device is the intended TV.
-
-## Implemented in this checkpoint
-
-- `QuietMachineView.java`: native Java Home/Library/Control surface, persistent rail,
-  ivory/graphite palette, thin borders, thicker orange focus outlines and inset fills.
-- Home: time-aware personalized greeting (existing name or Davy), device clock/date,
-  downsampled grayscale wallpaper, WATCH wired to existing HDMI/live-TV picker,
-  existing adapter tiles and order, real adapter launch actions.
-- Library/Search: installed launchable apps, real bounded-size app icons, three columns,
-  label/package search and music-app filtering. Unsupported media catalogs explicitly
-  say they are not connected. No fictional production media catalog.
-- Control: actual media volume when supported, disabled/unconnected ambient light,
-  persistent Focus modes, display/sound/network/system settings links, launcher
-  preferences, HDMI and Classic launcher recovery.
-- Focus sets launcher-only dimming plus a best-effort window-brightness request;
-  no global picture, permission or service changes.
-- Photo selection cycles LA/USC/Florence by OK on the panorama, persisted privately.
-  Photo pack is separate from APK to preserve the size budget. Existing
-  `wallpaper.jpg` is the fallback. Photo installation instructions preserve config.
-- MainActivity retains its existing identity, lifecycle, boot/remote/HDMI paths;
-  Quiet Machine is a native overlay. `AppAdapter` exposes a snapshot and its existing
-  launch implementation. Classic launcher remains accessible and has a return button.
-- `QuietMachineModelTest.java`: greeting boundaries, truthful filters, brightness policy.
-- Documentation: `docs/quiet-machine.md`, linked from README; photo credits included.
-
-## Validation and remaining work
-
-Completed before pause:
-
-- Final repository-wide Python suite: **2,132 tests, 36 skipped, OK**.
-- Final offline Java test/lint/release build: **BUILD SUCCESSFUL** (47 seconds).
-- Final lint: **0 errors, 100 warnings**; final APK: **557,893 bytes**.
-
-- JDK 17 + platform 34 + build-tools 34.0.0 configured in the cloud workspace.
-- `testReleaseUnitTest lintRelease assembleRelease` passed during implementation.
-- 297 JVM tests, zero failures. Lint completed with zero errors (warnings remain,
-  including English text formatting and the programmatically constructed custom view).
-- Release APK measured 557,893 bytes on the final successful build, below
-  589,824-byte / 576-KiB gate. Check the final size again after further edits.
-- No manifest, permission, dependency, minSdk, package identity, Home guard,
-  install/restore script, system package or physical TV changes.
-
-**Not completed:**
-
-- No screenshots of implemented screens yet. No visual comparison/refinement cycle.
-- No runtime verification of D-pad/OK/Back/Home, actual app launches, HDMI, volume,
-  classic recovery, screen sizing or screensaver on a TV or working emulator.
-- Software Android TV API 30 emulator was started without KVM; it remained offline
-  during checks. Do not describe it as a successful emulator test.
-- Photos are committed as a separate pack, not installed on a TV. Without the pack or
-  an existing wallpaper, the panorama is blank. Improve that empty state before delivery.
-
-Priority next steps:
-
-1. Pull this branch, inspect the diff, and build locally using the original signing key.
-2. Review overlay integration: underlying launcher focus/animation callbacks may still
-   contend with the new surface. Exercise all rail/content edges, return-from-app focus,
-   package changes, Home intents, settings return, and HDMI popup anchoring. Fix observed
-   issues without bypassing existing recovery/remote logic.
-3. Check 720p/1080p/4K and real TV font scaling. Control cards/footers may need further
-   spacing refinement. Library currently constructs native rows rather than recycling
-   them; profile a large installed-app list before making performance claims.
-4. Confirm volume behavior on the actual TV, including fixed-volume/CEC and denied
-   access. Ensure the fallback remains honest. Confirm Focus feedback on firmware that
-   ignores window brightness.
-5. Add photo pack safely (merge individual images through the existing ThemeProvider;
-   do not replace the user's config.json), improve absent-photo behavior, capture all
-   three real screens, compare to the provided reference, refine until close.
-6. Verify that Classic launcher retains configuration, module cards, ordering, screensaver,
-   installed-app detection, source input access and physical remote helpers.
-7. Finish full tests/lint/build, inspect size/permissions, document real device/firmware
-   results and limitations. Commit and push only this fork branch.
-
-## Cloud paths (not assumed to exist on the local machine)
-
-Repository `/workspace/cleandavystv`; SDK `/workspace/android-sdk`; JDK
-`/workspace/jdk17`; Gradle cache `/workspace/gradle`.
-Build logs `/tmp/quiet-build.log`, `/tmp/quiet-build-final.log`;
-Python suite `/tmp/repo-tests.log`; emulator `/tmp/emulator.log`.
-These paths and logs are ephemeral and are not committed. Build output APKs, SDKs,
-keys and screenshots containing device identifiers must not be committed.
-
-## Resume prompt
-
-> Continue the Quiet Machine redesign in my fork `davygit67/cleandavystv`, branch
-> `feature/quiet-machine-rams-ui`. Pull the branch and read HANDOFF.md, AGENTS.md and
-> docs/quiet-machine.md first. This is a buildable checkpoint, not a finished redesign.
-> Preserve my current app configuration, package identity, HDMI/remote/Home recovery
-> and rollback paths. Follow the attached three-panel reference, using the updated LA,
-> USC and Florence photo direction. Finish the native UI, runtime tests, screenshots
-> and visual refinement. I authorize routine implementation and testing decisions;
-> don't ask repeatedly for decisions already approved. You may inspect my connected
-> TV and prepare installation, but identify the correct device, back up existing state
-> and verify the original signing key before updating. Do not uninstall/disable system
-> packages or change the default Home app. Push commits to my fork's feature branch
-> only. Report exactly what was tested and what still needs physical remote verification.
+- `QuietMachineView.java`: the whole surface. It has the Dark/Light palette tokens, rail, Home, Library/Search,
+  Control, the `Meter` level bar and `Glyph` line icons drawn in code.
+- `QuietMachineModel.java` (+ test): greeting, dimming, catalog availability, Recent/A–Z order, resolution
+  label, volume step.
+- `MainActivity.java`: hosts the overlay over the invisible Classic surface. In Classic, the return button is
+  reachable from the Settings pill.
+- `AppAdapter.java`: `quietEntries()` and `quietLaunch()`; Quiet Machine launches record LastOpened.
+- `HomeRedirectService.java`, `PhotoDream.java`: the fork compatibility components.
+- Details for users: `docs/quiet-machine.md`.
