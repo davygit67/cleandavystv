@@ -1,7 +1,6 @@
 package com.gathin.tvhome.govee;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -27,8 +26,6 @@ public final class GoveeRepository {
         boolean available(GoveeModels.Device device);
     }
 
-    private static final String PREFS = "quiet_govee_cache";
-    private static final String KEY_NAMES = "device_names_v1";
     private static final long CACHE_TTL_MS = 15 * 60_1000L;
 
     private final GoveeApi api;
@@ -89,7 +86,6 @@ public final class GoveeRepository {
             @Override public void ok(List<GoveeModels.Device> value) {
                 cache = value == null ? Collections.emptyList() : new ArrayList<>(value);
                 cachedAt = SystemClock.elapsedRealtime();
-                persistNames(c, cache);
                 main.post(() -> cb.ok(new ArrayList<>(cache)));
             }
             @Override public void err(String message) {
@@ -158,14 +154,4 @@ public final class GoveeRepository {
         };
     }
 
-    private void persistNames(Context c, List<GoveeModels.Device> devices) {
-        try {
-            SharedPreferences p = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            JSONObject o = new JSONObject();
-            for (GoveeModels.Device d : devices) o.put(d.deviceId, d.name);
-            p.edit().putString(KEY_NAMES, o.toString()).apply();
-        } catch (Exception ignored) {
-            // Cache is best-effort; never fail discovery for it.
-        }
-    }
 }
