@@ -1,3 +1,66 @@
+# Quiet Machine 2.0 — handoff (12 November 2026, cloud Codebuff session)
+
+Branch `feat/quiet-machine-2`, cut from `main` at `93940982`. Push only there: never main, never
+upstream, never force, no merges. Commits so far: `0c9eb9fb` (standalone launcher, redesign, cast,
+Govee, debloat audit), `45d3414d` (build fixes), `7f1b5949` (debounce simplification), `7bf31da6`
+(masked key field), `db347829` (drop `controlDebounced` wrapper), `72e58c67` (on-TV test plan). All
+pushed to origin.
+
+## State: built and unit-tested locally, nothing touched on the TV
+
+This session never opened ADB and never contacted the TV: no install, no settings read or changed,
+no package disabled. Everything verified below was verified in the cloud workspace only (JDK
+17.0.21+9, Android SDK 34 / build-tools 34.0.0). The TV still runs whatever it ran before; wireless
+debugging is presumably still on from the October session until Davy closes it.
+
+### What was built
+
+- Standalone launcher: `MainActivity` hosts the Quiet Machine Home directly; the invisible Classic
+  launch/input path stays only as data. The Classic/Quiet toggle and the `quiet_classic` pref are gone
+  (cleared on start); the Classic return button is replaced by a TV-home recovery path. Stock
+  `com.amazon.tv.launcher/.ui/HomeActivity_vNext` untouched.
+- Redesign (`quiet/QuietDesign`): WATCH / PC CAST / LIGHTS rails, five screens, one Home UI.
+- PC Cast entry: `quiet/CastLauncher` (Miracast probe + fallback) and pure `quiet/MirroringPicker`
+  (+ tests). No new dependencies.
+- Govee cloud integration (cloud only; LAN disabled by design on managed residential Wi-Fi): the
+  `govee/` package — `GoveeApi` (HttpsURLConnection, 10 s timeouts, CONTROL_FLOOR 1200 ms, errors
+  redacted via `GoveePayloads.safe`), `GoveeModels` (capability-aware, no DreamView claims),
+  `GoveeCredentialStore` (Android KeyStore AES/GCM; disk holds ciphertext blob + IV only),
+  `GoveeRepository` (single pending-request debounce; urgent power bypass; shutdown cancels),
+  `GoveePayloads` (pure builders). Lights screen with discovery, power/brightness/color-temp/RGB,
+  backlight-first ordering.
+- Key setup is encrypted-storage-only: masked password field, autofill off, wiped on save, plaintext
+  in process memory only, never logged.
+- Docs: `docs/quiet-machine-2.md` (architecture/build/rollback),
+  `docs/quiet-machine-2-test-plan.md` (the on-TV runbook), `docs/debloat-fireos-8-audit.md` plus
+  read-only `tools/debloat-audit-fireos8.sh` (inspect only, nothing disabled).
+- Compatibility preserved: package `com.gathin.tvhome`, `HomeRedirectService` + `PhotoDream`
+  component names, prefs. versionCode 11 / versionName 3.2. Only added permission: `INTERNET`
+  (Govee). Release APK 577,493 B, under the 589,824 B gate.
+
+### Build and test results (this session)
+
+- `testReleaseUnitTest lintRelease assembleRelease assembleDebug`: BUILD SUCCESSFUL.
+- 310 JVM tests, 0 failures (including new `MirroringPickerTest`, `GoveePayloadsTest`). Lint: 0 errors.
+- Secrets scan of the branch: no real Govee key (fragment absent from full history), no device IDs,
+  no real IPs, no Wi-Fi names, no serials. The IPv4-pattern hits are version numbers only
+  (Fire OS 8.1.8.0, build-tools 34.0.0).
+
+### Still needs Davy with the physical remote
+
+- Everything in `docs/quiet-machine-2-test-plan.md`: backup, signing-cert match,
+  `adb install -r app-debug.apk`, then the 12 physical-remote checks (real Home press, reboot
+  self-open, D-pad on every edge, five apps launch-and-return, Watch/PC Cast/Lights tiles, live
+  Govee control, Win+K mirror, HDMI 1/2/3 picture switch, volume, screensaver wake,
+  Settings → TV home).
+- The 2.0 rollback drill is untested: `adb install -r -d previous.apk`. There is no in-UI Classic
+  fallback anymore — APK reinstall is the rollback.
+- Govee: the exposed key must be rotated in the Govee app before the new one is entered on the
+  Lights screen.
+- Debloat audit is read-only; no package disabled. Any disable needs per-package approval.
+
+---
+
 # Quiet Machine — handoff (28 October 2026, Claude Code session)
 
 Fork `davygit67/cleandavystv`, branch `feature/quiet-machine-rams-ui`. Push only to origin's feature
