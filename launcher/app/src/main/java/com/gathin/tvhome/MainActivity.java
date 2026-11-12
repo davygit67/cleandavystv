@@ -914,7 +914,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             classicSurface.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             classicSurface.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             root.addView(classicSurface, new FrameLayout.LayoutParams(-1, -1));
-            quietMachine = new QuietMachineView(this, adapter, this::showInputs, () -> { });
+            quietMachine = new QuietMachineView(this, adapter, this::showInputs);
             root.addView(quietMachine, new FrameLayout.LayoutParams(-1, -1));
             grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             for (View v : new View[]{btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings}) v.setFocusable(false);
