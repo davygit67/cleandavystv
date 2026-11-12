@@ -43,7 +43,7 @@ public final class GoveeRepository {
     private static final class Pending {
         String key;
         String sku, device, type, instance;
-        JSONObject value;
+        Object value;
         GoveeApi.Callback<Void> cb;
     }
 
@@ -111,7 +111,11 @@ public final class GoveeRepository {
      * requests are dropped silently; only the latest callback fires.
      */
     public void control(Context c, GoveeModels.Device d, String type, String instance,
-                        JSONObject value, boolean urgent, GoveeApi.Callback<Void> cb) {
+                        Object value, boolean urgent, GoveeApi.Callback<Void> cb) {
+        if (!d.supports(type, instance)) {
+            cb.err("This device does not advertise that control.");
+            return;
+        }
         String key = store.get(c);
         if (key.isEmpty()) {
             cb.err("API key not set.");
