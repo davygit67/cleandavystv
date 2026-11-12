@@ -70,6 +70,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.gathin.tvhome.quiet.CastLauncher;
+import com.gathin.tvhome.quiet.QuietDesign;
 import com.gathin.tvhome.govee.GoveeApi;
 import com.gathin.tvhome.govee.GoveeModels;
 import com.gathin.tvhome.govee.GoveeRepository;
@@ -83,7 +84,7 @@ import java.util.function.IntConsumer;
  * Miracast receiver. Nothing shown here is invented: unavailable data says so.
  */
 final class QuietMachineView extends LinearLayout {
-    private static final int ORANGE = 0xfff36b21, ON_ORANGE = 0xfffaf8f2;
+    private static final int ORANGE = QuietDesign.ACCENT, ON_ORANGE = QuietDesign.ON_ACCENT;
     /** Palette tokens: Dark (the default) or Light, switched from Control and saved. */
     private int PAPER, RAIL, INSET, INK, LINE, TRACK, MUTED, GREEN;
     private static final String[] SCREENS = {"Home", "Library", "Search", "Lights", "Settings"};
@@ -135,14 +136,14 @@ final class QuietMachineView extends LinearLayout {
         setOrientation(HORIZONTAL);
         setBackgroundColor(PAPER);
         rail = column();
-        rail.setBackgroundColor(RAIL);
-        rail.setPadding(d(22), d(52), d(8), d(24));
-        addView(rail, new LayoutParams(d(166), -1));
+        paintRail();
+        rail.setPadding(d(16), d(38), d(6), d(24));
+        addView(rail, new LayoutParams(d(138), -1));
         View divider = new View(a);
         divider.setBackgroundColor(LINE);
         addView(divider, new LayoutParams(d(1), -1));
         body = column();
-        body.setPadding(d(28), d(30), d(36), d(22));
+        body.setPadding(d(24), d(28), d(28), d(20));
         addView(body, new LayoutParams(0, -1, 1));
         IntentFilter filter = new IntentFilter(Intent.ACTION_TIME_TICK);
         filter.addAction(Intent.ACTION_TIME_CHANGED);
@@ -154,22 +155,31 @@ final class QuietMachineView extends LinearLayout {
         show("Home");
     }
 
+    /** Shared material tokens; the design system is used by the actual UI, not a dead style file. */
     private void palette(boolean dark) {
-        PAPER = dark ? 0xff1b1b19 : 0xfff2f0e9;
-        RAIL = dark ? 0xff222220 : 0xffebe8df;
-        INSET = dark ? 0xff2f2e2b : 0xffe2dfd5;
-        INK = dark ? 0xffeceae2 : 0xff222220;
-        LINE = dark ? 0xff3d3c38 : 0xffc9c7be;
-        TRACK = dark ? 0xff4b4a45 : 0xffbcb9af;
-        MUTED = dark ? 0xff9c9a90 : 0xff6c6a62;
-        GREEN = dark ? 0xff6fae7d : 0xff5e9a6c;
+        PAPER = dark ? QuietDesign.DARK_PAPER : QuietDesign.LIGHT_PAPER;
+        RAIL = dark ? QuietDesign.DARK_SURFACE_SOLID : QuietDesign.LIGHT_SURFACE_SOLID;
+        INSET = dark ? QuietDesign.DARK_INSET : QuietDesign.LIGHT_INSET;
+        INK = dark ? QuietDesign.DARK_INK : QuietDesign.LIGHT_INK;
+        LINE = dark ? QuietDesign.DARK_LINE : QuietDesign.LIGHT_LINE;
+        TRACK = dark ? QuietDesign.DARK_TRACK : QuietDesign.LIGHT_TRACK;
+        MUTED = dark ? QuietDesign.DARK_MUTED : QuietDesign.LIGHT_MUTED;
+        GREEN = dark ? QuietDesign.DARK_GREEN : QuietDesign.LIGHT_GREEN;
+    }
+
+    private void paintRail() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        rail.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF28292D : 0xFFF6F5F0,
+                dark ? 0xFF1D1E22 : 0xFFE8E6DF,
+                0x00000000));
     }
     private void toggleAppearance() {
         boolean dark = !prefs.getBoolean("quiet_dark", true);
         prefs.edit().putBoolean("quiet_dark", dark).apply();
         palette(dark);
         setBackgroundColor(PAPER);
-        rail.setBackgroundColor(RAIL);
+        paintRail();
         getChildAt(1).setBackgroundColor(LINE);
         show(screen);
         post(() -> { View t = findViewWithTag("appearance"); if (t != null) t.requestFocus(); });
@@ -204,9 +214,18 @@ final class QuietMachineView extends LinearLayout {
         g.setColor(fill); g.setCornerRadius(radius); g.setStroke(width, stroke);
         return g;
     }
-    private Drawable resting() { return frame(PAPER, LINE, d(1), d(12)); }
-    /** Focus is never colour alone: a thicker outline, an inset fill and a gentle scale (tiles add an underline). */
-    private Drawable focusRing() { return frame(INSET, ORANGE, d(2), d(14)); }
+    /** Quiet glass: a soft material tint at rest, rather than an outlined box around everything. */
+    private Drawable resting() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        return QuietDesign.glassPanel(activity,
+                dark ? 0x922B2C32 : 0xD6EAE8E2, 0x00000000);
+    }
+    /** Clear D-pad focus with a restrained accent rim instead of neon/glowing effects. */
+    private Drawable focusRing() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        return QuietDesign.glassPanel(activity,
+                dark ? 0xED35363C : 0xFFF7F5F0, ORANGE);
+    }
     private void focusable(View v, boolean framed, Runnable action, Consumer<Boolean> also) {
         v.setFocusable(true);
         v.setClickable(true);
@@ -217,8 +236,15 @@ final class QuietMachineView extends LinearLayout {
             w.setBackground(focus ? focusRing() : framed ? resting() : null);
             boolean reduce = prefs.getBoolean("quiet_reduce_motion", false);
             float target = focus ? 1.04f : 1f;
-            if (reduce) w.setScaleX(target == 1f ? 1f : 1.01f);
-            else w.animate().scaleX(target).scaleY(target).setDuration(focus ? 140 : 100).start();
+            w.animate().cancel();
+            if (reduce) {
+                float scale = focus ? 1.01f : 1f;
+                w.setScaleX(scale);
+                w.setScaleY(scale);
+            } else {
+                w.animate().scaleX(target).scaleY(target)
+                        .setDuration(focus ? QuietDesign.FOCUS_MS : 110).start();
+            }
             if (also != null) also.accept(focus);
         });
     }
@@ -802,7 +828,11 @@ final class QuietMachineView extends LinearLayout {
     private LinearLayout card(LinearLayout parent, String title, int glyphType, boolean last) {
         LinearLayout card = column();
         card.setPadding(d(16), d(16), d(16), d(14));
-        card.setBackground(resting());
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        card.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF292A30 : 0xFFF7F6F2,
+                dark ? 0xFF212228 : 0xFFEAE8E1,
+                0x00000000));
         LinearLayout top = row();
         top.setGravity(Gravity.TOP);
         top.addView(caps(title, 9.5f, medium, INK), new LayoutParams(0, -2, 1));
@@ -1128,7 +1158,11 @@ final class QuietMachineView extends LinearLayout {
     private View deviceRow(GoveeModels.Device d, boolean highlight) {
         LinearLayout row = column();
         row.setPadding(d(16), d(14), d(16), d(12));
-        row.setBackground(resting());
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        row.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF28292F : 0xFFF7F6F2,
+                dark ? 0xFF202126 : 0xFFEAE8E1,
+                0x00000000));
         LinearLayout top = row();
         TextView name = text(d.name + (d.online ? "" : "  ·  offline"), 13.5f, medium, d.online ? INK : MUTED);
         name.setSingleLine();
