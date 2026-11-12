@@ -25,23 +25,36 @@ public final class GoveeModels {
         public final boolean online;
         /** Capability type strings reported by the API. */
         public final Set<String> capabilities;
-        /** Field name -> JSON field descriptor for range/color caps (min/max, options). */
+        /** Exact (type, instance) pairs exposed by this particular device. */
+        public final Set<String> instances;
+        /** "type|instance" -> parameters JSON (min/max/options), if supplied. */
         public final Map<String, Object> fields;
 
         public Device(String sku, String deviceId, String name, boolean online,
-                      Set<String> capabilities, Map<String, Object> fields) {
+                      Set<String> capabilities, Map<String, Object> fields,
+                      Set<String> instances) {
             this.sku = sku == null ? "" : sku;
             this.deviceId = deviceId == null ? "" : deviceId;
             this.name = name == null ? deviceId : name;
             this.online = online;
             this.capabilities = capabilities == null
-                    ? Collections.emptySet() : Collections.unmodifiableSet(capabilities);
+                    ? Collections.emptySet() : Collections.unmodifiableSet(
+                            new java.util.HashSet<>(capabilities));
+            this.instances = instances == null
+                    ? Collections.emptySet() : Collections.unmodifiableSet(
+                            new java.util.HashSet<>(instances));
             this.fields = fields == null
                     ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(fields));
         }
 
         public boolean supports(String capability) {
             return capabilities.contains(capability);
+        }
+
+        /** Require the exact advertised instance, not just its broader capability type.
+         * Example: an RGB light is not necessarily color-temperature capable. */
+        public boolean supports(String capability, String instance) {
+            return instances.contains(capability + "|" + instance);
         }
 
         /** Heuristic: TV backlight SKUs commonly start with H61/H65/H66/H70 series; never trusted alone. */
