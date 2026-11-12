@@ -899,7 +899,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                     .build(), vpnCallback);
         }
-        if (!getPreferences(0).getBoolean("quiet_classic", false)) {
+        // Quiet Machine 2.0: single Home UI, no Classic toggle. Stale pref cleared.
+        getPreferences(0).edit().remove("quiet_classic").apply();
+        if (true) {
             // Keep Classic alive for its existing launch/input logic, but isolate every descendant
             // from drawing, accessibility and focus (including delayed Classic callbacks).
             FrameLayout classicSurface = new FrameLayout(this);
@@ -912,34 +914,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             classicSurface.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             classicSurface.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             root.addView(classicSurface, new FrameLayout.LayoutParams(-1, -1));
-            quietMachine = new QuietMachineView(this, adapter, this::showInputs, () -> {
-                getPreferences(0).edit().putBoolean("quiet_classic", true).apply();
-                recreate();
-            });
+            quietMachine = new QuietMachineView(this, adapter, this::showInputs, () -> { });
             root.addView(quietMachine, new FrameLayout.LayoutParams(-1, -1));
             grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
             for (View v : new View[]{btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings}) v.setFocusable(false);
-        } else {
-            TextView quietReturn = new TextView(this);
-            quietReturn.setText("Quiet Machine"); quietReturn.setTextColor(0xff222220);
-            quietReturn.setBackgroundColor(0xfff2f0e9); quietReturn.setPadding(16, 12, 16, 12);
-            quietReturn.setFocusable(true);
-            quietReturn.setOnClickListener(v -> { getPreferences(0).edit().putBoolean("quiet_classic", false).apply(); recreate(); });
-            quietReturn.setOnFocusChangeListener((v, f) -> v.setBackgroundColor(f ? 0xfff36b21 : 0xfff2f0e9));
-            // The grid keeps focus at its edges, so the way back is Right from the Settings pill (Up or Left returns).
-            btnSettings.setOnKeyListener((v, keyCode, event) -> {
-                if (keyCode != KeyEvent.KEYCODE_DPAD_RIGHT || rtlMenuBar) return pillKeys.onKey(v, keyCode, event);
-                if (event.getAction() == KeyEvent.ACTION_DOWN) quietReturn.requestFocus();
-                return true;
-            });
-            quietReturn.setOnKeyListener((v, keyCode, event) -> {
-                if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_LEFT) return false;
-                if (event.getAction() == KeyEvent.ACTION_DOWN) btnSettings.requestFocus();
-                return true;
-            });
-            FrameLayout.LayoutParams qp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
-            root.addView(quietReturn, qp);
         }
+
         // Not after recreate(): the launch intent survives it and would open the settings again.
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())) openInputsIfAsked(getIntent());
     }

@@ -69,20 +69,25 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import com.gathin.tvhome.quiet.CastLauncher;
+import com.gathin.tvhome.govee.GoveeApi;
+import com.gathin.tvhome.govee.GoveeModels;
+import com.gathin.tvhome.govee.GoveeRepository;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 /**
- * Quiet Machine (cleandavystv fork): an offline, native Home / Library / Control surface laid over the Classic
- * launcher, which stays alive underneath for its launch, input and remote logic. AppAdapter remains the authority
- * for configured tiles and launch actions. Nothing shown here is invented: unavailable data says so.
+ * Quiet Machine 2.0: the single Home UI. Home / Library / Search / Lights / Settings.
+ * Classic layouts are never shown; AppAdapter remains the authority for configured tiles
+ * and launch/input actions. Govee lighting is cloud-only; casting uses the native
+ * Miracast receiver. Nothing shown here is invented: unavailable data says so.
  */
 final class QuietMachineView extends LinearLayout {
     private static final int ORANGE = 0xfff36b21, ON_ORANGE = 0xfffaf8f2;
     /** Palette tokens: Dark (the default) or Light, switched from Control and saved. */
     private int PAPER, RAIL, INSET, INK, LINE, TRACK, MUTED, GREEN;
-    private static final String[] SCREENS = {"Home", "Library", "Search", "Settings"};
-    private static final int[] SCREEN_GLYPHS = {Glyph.HOME, Glyph.LIBRARY, Glyph.SEARCH, Glyph.SETTINGS};
+    private static final String[] SCREENS = {"Home", "Library", "Search", "Lights", "Settings"};
+    private static final int[] SCREEN_GLYPHS = {Glyph.HOME, Glyph.LIBRARY, Glyph.SEARCH, Glyph.LIGHT, Glyph.SETTINGS};
     private static final String[] TABS = {"All", "Movies", "Series", "Documentaries", "Music"};
     private static final String[] MODES = {"Off", "Day", "Evening", "Night"};
     /** Shown on screen with each photograph: the attribution its licence asks for (CREDITS.md). */
@@ -97,6 +102,8 @@ final class QuietMachineView extends LinearLayout {
     private final Typeface light, regular, medium, variable;
     private final LinearLayout rail, body;
     private final ExecutorService loader = Executors.newSingleThreadExecutor();
+    private final GoveeRepository govee = new GoveeRepository(Executors.newSingleThreadExecutor());
+    private TextView goveeStatus;
     private final ArrayList<AppAdapter.Entry> catalog = new ArrayList<>();
     private final ArrayList<AppAdapter.Entry> filtered = new ArrayList<>();
     private final LruCache<String, Drawable> art = new LruCache<>(48);
@@ -197,9 +204,9 @@ final class QuietMachineView extends LinearLayout {
         g.setColor(fill); g.setCornerRadius(radius); g.setStroke(width, stroke);
         return g;
     }
-    private Drawable resting() { return frame(PAPER, LINE, d(1), d(2)); }
-    /** Focus is never colour alone: a thicker outline and an inset fill (tiles add an underline). */
-    private Drawable focusRing() { return frame(INSET, ORANGE, d(2), d(2)); }
+    private Drawable resting() { return frame(PAPER, LINE, d(1), d(12)); }
+    /** Focus is never colour alone: a thicker outline, an inset fill and a gentle scale (tiles add an underline). */
+    private Drawable focusRing() { return frame(INSET, ORANGE, d(2), d(14)); }
     private void focusable(View v, boolean framed, Runnable action, Consumer<Boolean> also) {
         v.setFocusable(true);
         v.setClickable(true);
@@ -208,6 +215,10 @@ final class QuietMachineView extends LinearLayout {
         v.setOnClickListener(w -> action.run());
         v.setOnFocusChangeListener((w, focus) -> {
             w.setBackground(focus ? focusRing() : framed ? resting() : null);
+            boolean reduce = prefs.getBoolean("quiet_reduce_motion", false);
+            float target = focus ? 1.04f : 1f;
+            if (reduce) w.setScaleX(target == 1f ? 1f : 1.01f);
+            else w.animate().scaleX(target).scaleY(target).setDuration(focus ? 140 : 100).start();
             if (also != null) also.accept(focus);
         });
     }
@@ -267,6 +278,7 @@ final class QuietMachineView extends LinearLayout {
         disposed = true;
         generation++;
         loader.shutdownNow();
+        govee.shutdown();
         try { activity.unregisterReceiver(ticks); } catch (IllegalArgumentException ignored) { /* never registered */ }
     }
     View inputAnchor() { return inputAnchor == null ? this : inputAnchor; }
@@ -293,6 +305,7 @@ final class QuietMachineView extends LinearLayout {
         for (int i = 0; i < SCREENS.length; i++) rail.addView(railItem(SCREENS[i], SCREEN_GLYPHS[i], SCREENS[i].equals(next)));
         if (next.equals("Home")) homeContent();
         else if (next.equals("Settings")) controlContent();
+        else if (next.equals("Lights")) lightsContent();
         else libraryContent(next.equals("Search"));
         linkRail(next);
         post(this::requestDefault);
@@ -422,6 +435,14 @@ final class QuietMachineView extends LinearLayout {
         inputAnchor = watch;
         defaultFocus = watch;
         tiles.addView(watch, tileParams(fit, false));
+        View pc = tile(glyph(Glyph.DISPLAY, INK, false, 30), "PC Cast", true, this::openCast, null);
+        pc.setTag("pc-cast");
+        pc.setContentDescription("PC Cast: open the TV screen-mirroring receiver");
+        tiles.addView(pc, tileParams(fit, false));
+        View lights = tile(glyph(Glyph.LIGHT, INK, false, 30), "Lights", true, () -> show("Lights"), null);
+        lights.setTag("lights");
+        lights.setContentDescription("Lights: Govee smart lights");
+        tiles.addView(lights, tileParams(fit, false));
         for (int i = 0; i < apps.size(); i++) {
             AppAdapter.Entry app = apps.get(i);
             View t = tile(appArt(app), app.label, false, () -> adapter.quietLaunch(app), app);
@@ -868,9 +889,11 @@ final class QuietMachineView extends LinearLayout {
         ambient.addView(flex());
         ambient.addView(new Meter(false, 100, null, null), new LayoutParams(-1, d(30)));
         ambient.addView(scale("—", "—"));
-        TextView none = text("No lighting integration", 9.5f, regular, MUTED);
+        TextView none = text("Govee cloud control  ·  open Lights for devices", 9.5f, regular, MUTED);
         none.setPadding(0, d(6), 0, 0);
         ambient.addView(none);
+        space(ambient, 8);
+        ambient.addView(quietButton("Open Lights", () -> show("Lights")));
 
         LinearLayout focus = card(cards, "Focus", Glyph.MOON, false);
         String mode = prefs.getString("quiet_focus", "Off");
@@ -932,7 +955,9 @@ final class QuietMachineView extends LinearLayout {
         LayoutParams gap = new LayoutParams(-2, -2);
         gap.setMarginStart(d(10));
         footer.addView(hdmi, gap);
-        footer.addView(quietButton("Classic launcher", classic), new LayoutParams(gap));
+        pcBtn = quietButton("PC Cast", this::openCast);
+        footer.addView(pcBtn, new LayoutParams(gap));
+        footer.addView(quietButton("TV home", this::openStockHome), new LayoutParams(gap));
         TextView appearance = quietButton(prefs.getBoolean("quiet_dark", true) ? "Light mode" : "Dark mode",
                 this::toggleAppearance);
         appearance.setTag("appearance");
@@ -943,6 +968,254 @@ final class QuietMachineView extends LinearLayout {
         content.addView(note);
         if (defaultFocus == null) defaultFocus = buttons.get(0);
     }
+    // ---- PC casting (native Miracast receiver) --------------------------------------------------
+
+    private void openCast() {
+        try {
+            activity.startActivity(CastLauncher.resolve(activity));
+            Toast.makeText(activity, CastLauncher.WIN_K_INSTRUCTION, Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            settings(android.provider.Settings.ACTION_DISPLAY_SETTINGS);
+        }
+    }
+
+    /** Recovery path: return to Amazon's system interface without disabling anything. */
+    private void openStockHome() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            home.setPackage("com.amazon.tv.launcher");
+            if (activity.getPackageManager().resolveActivity(home, 0) != null) {
+                activity.startActivity(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return;
+            }
+        } catch (Exception ignored) { /* fall through to generic Home */ }
+        try {
+            activity.startActivity(new Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            Toast.makeText(activity, "System home is not available", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // ---- Lights (Govee cloud) -------------------------------------------------------------------
+
+    private void lightsContent() {
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(true);
+        LinearLayout content = column();
+        content.setPadding(d(4), d(6), d(10), d(20));
+        scroll.addView(content, new LayoutParams(-1, -2));
+        body.addView(scroll, new LayoutParams(-1, -1));
+        TextView title = text("Lights", 24, light, INK);
+        content.addView(title);
+        space(content, 4);
+        TextView sub = text("Govee cloud control  ·  LAN intentionally off on managed Wi-Fi", 11, regular, MUTED);
+        content.addView(sub);
+        space(content, 12);
+        goveeStatus = text(govee.credentials().has(activity) ? "Checking devices…" : "No API key saved", 11, regular, MUTED);
+        content.addView(goveeStatus);
+        space(content, 10);
+        LinearLayout keyRow = row();
+        final EditText keyInput = new EditText(activity);
+        keyInput.setHint("Paste Govee API key, OK to save");
+        keyInput.setSingleLine(true);
+        keyInput.setTextColor(INK);
+        keyInput.setHintTextColor(MUTED);
+        keyInput.setTypeface(regular);
+        keyInput.setTextSize(13);
+        keyInput.setPadding(d(14), d(10), d(14), d(10));
+        keyInput.setBackground(resting());
+        keyInput.setOnFocusChangeListener((v, f) -> v.setBackground(f ? focusRing() : resting()));
+        keyRow.addView(keyInput, new LayoutParams(0, -2, 1));
+        TextView save = quietButton("Save key", () -> {
+            String v = keyInput.getText() == null ? "" : keyInput.getText().toString().trim();
+            if (v.isEmpty()) {
+                Toast.makeText(activity, "Paste the key first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            try {
+                govee.credentials().set(activity, v);
+                keyInput.setText("");
+                Toast.makeText(activity, "Key saved in encrypted storage", Toast.LENGTH_SHORT).show();
+                loadGoveeDevices(content);
+            } catch (Exception e) {
+                Toast.makeText(activity, "Could not save the key on this TV", Toast.LENGTH_LONG).show();
+            }
+        });
+        LayoutParams gap = new LayoutParams(-2, -2);
+        gap.setMarginStart(d(10));
+        keyRow.addView(save, gap);
+        content.addView(keyRow);
+        space(content, 8);
+        TextView warn = text("The key you were given is already exposed: rotate it in the Govee app, then save the new key here. Keys are never logged or committed.", 10.5f, regular, MUTED);
+        content.addView(warn);
+        space(content, 10);
+        LinearLayout actions = row();
+        TextView refresh = quietButton("Refresh", () -> loadGoveeDevices(content));
+        actions.addView(refresh);
+        TextView clear = quietButton("Remove key", () -> {
+            govee.credentials().clear(activity);
+            if (goveeStatus != null) goveeStatus.setText("API key removed");
+            loadGoveeDevices(content);
+        });
+        LayoutParams g2 = new LayoutParams(-2, -2);
+        g2.setMarginStart(d(10));
+        actions.addView(clear, g2);
+        content.addView(actions);
+        space(content, 14);
+        LinearLayout list = column();
+        list.setTag("govee-list");
+        content.addView(list);
+        defaultFocus = refresh;
+        if (govee.credentials().has(activity)) loadGoveeDevices(content);
+    }
+
+    private void loadGoveeDevices(LinearLayout content) {
+        final LinearLayout list = content.findViewWithTag("govee-list");
+        if (list == null) return;
+        list.removeAllViews();
+        if (!govee.credentials().has(activity)) {
+            if (goveeStatus != null) goveeStatus.setText("No API key saved");
+            list.addView(text("Add your Govee API key above to discover devices.", 12, regular, MUTED));
+            return;
+        }
+        if (goveeStatus != null) goveeStatus.setText("Checking devices…");
+        list.addView(text("Loading…", 12, regular, MUTED));
+        govee.refresh(activity, new GoveeApi.Callback<List<GoveeModels.Device>>() {
+            @Override public void ok(List<GoveeModels.Device> devices) {
+                post(() -> {
+                    list.removeAllViews();
+                    if (goveeStatus != null) goveeStatus.setText(devices.isEmpty() ? "No devices found" : devices.size() + (devices.size() == 1 ? " device" : " devices"));
+                    if (devices.isEmpty()) {
+                        list.addView(text("No devices on this Govee account.", 12, regular, MUTED));
+                        return;
+                    }
+                    GoveeModels.Device tv = null;
+                    for (GoveeModels.Device d : devices) if (d.maybeTvBacklight()) { tv = d; break; }
+                    if (tv != null) {
+                        list.addView(deviceRow(tv, true));
+                        space(list, 10);
+                    }
+                    TextView all = quietButton("All lights on/off", () -> toggleAll(devices));
+                    list.addView(all);
+                    space(list, 10);
+                    for (GoveeModels.Device d : devices) {
+                        if (d == tv) continue;
+                        list.addView(deviceRow(d, false));
+                        space(list, 10);
+                    }
+                });
+            }
+            @Override public void err(String message) {
+                post(() -> {
+                    list.removeAllViews();
+                    if (goveeStatus != null) goveeStatus.setText("Connection failed");
+                    list.addView(text("Could not reach Govee: " + message, 12, regular, MUTED));
+                    space(list, 8);
+                    list.addView(quietButton("Retry", () -> loadGoveeDevices(content)));
+                });
+            }
+        });
+    }
+
+    private View deviceRow(GoveeModels.Device d, boolean highlight) {
+        LinearLayout row = column();
+        row.setPadding(d(16), d(14), d(16), d(12));
+        row.setBackground(resting());
+        LinearLayout top = row();
+        TextView name = text(d.name + (d.online ? "" : "  ·  offline"), 13.5f, medium, d.online ? INK : MUTED);
+        name.setSingleLine();
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        top.addView(name, new LayoutParams(0, -2, 1));
+        top.addView(caps(d.sku, 9, regular, MUTED));
+        row.addView(top);
+        space(row, 4);
+        StringBuilder caps = new StringBuilder();
+        if (d.supports(GoveeModels.CAP_POWER)) caps.append("Power  ");
+        if (d.supports(GoveeModels.CAP_BRIGHTNESS)) caps.append("Brightness  ");
+        if (d.supports(GoveeModels.CAP_COLOR_RGB)) caps.append("Color  ");
+        if (d.supports(GoveeModels.CAP_COLOR_TEMP)) caps.append("Temp  ");
+        if (d.supports(GoveeModels.CAP_SCENE)) caps.append("Scenes");
+        if (caps.length() == 0) caps.append("No controllable capabilities reported");
+        if (highlight) caps.insert(0, "TV backlight  ·  ");
+        row.addView(text(caps.toString().trim(), 10, regular, MUTED));
+        space(row, 8);
+        LinearLayout buttons = row();
+        if (d.supports(GoveeModels.CAP_POWER) && d.online) {
+            TextView on = quietButton("On", () -> power(d, true));
+            TextView off = quietButton("Off", () -> power(d, false));
+            buttons.addView(on);
+            LayoutParams g = new LayoutParams(-2, -2);
+            g.setMarginStart(d(10));
+            buttons.addView(off, g);
+            if (d.supports(GoveeModels.CAP_BRIGHTNESS)) {
+                TextView dim = quietButton("Dim -", () -> nudgeBrightness(d, -10));
+                TextView up = quietButton("Bright +", () -> nudgeBrightness(d, 10));
+                buttons.addView(dim, new LayoutParams(g));
+                buttons.addView(up, new LayoutParams(g));
+            }
+            if (d.supports(GoveeModels.CAP_COLOR_TEMP)) {
+                TextView temp = quietButton("Warmer/cooler", () -> cycleTemp(d));
+                buttons.addView(temp, new LayoutParams(g));
+            }
+            if (d.supports(GoveeModels.CAP_COLOR_RGB)) {
+                TextView warm = quietButton("Warm white", () -> setRgb(d, 255, 190, 120));
+                buttons.addView(warm, new LayoutParams(g));
+            }
+        } else {
+            buttons.addView(text(d.online ? "This model reports no switchable control" : "Offline — controls hidden", 11, regular, MUTED));
+        }
+        row.addView(buttons);
+        return row;
+    }
+
+    private void toggleAll(List<GoveeModels.Device> devices) {
+        for (GoveeModels.Device d : devices) {
+            if (d.online && d.supports(GoveeModels.CAP_POWER)) power(d, true);
+        }
+        Toast.makeText(activity, "All lights on (tap Off on a device to switch one off)", Toast.LENGTH_SHORT).show();
+    }
+
+    private void power(GoveeModels.Device d, boolean on) {
+        govee.control(activity, d, "devices.capabilities.on_off", "powerSwitch", GoveeApi.onOffValue(on), true,
+                new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { post(() -> Toast.makeText(activity, d.name + (on ? " on" : " off"), Toast.LENGTH_SHORT).show()); }
+                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                });
+    }
+
+    private final java.util.Map<String, Integer> brightnessGuess = new java.util.HashMap<>();
+    private void nudgeBrightness(GoveeModels.Device d, int delta) {
+        int cur = brightnessGuess.containsKey(d.deviceId) ? brightnessGuess.get(d.deviceId) : 60;
+        int next = Math.max(1, Math.min(100, cur + delta));
+        brightnessGuess.put(d.deviceId, next);
+        govee.controlDebounced(activity, d, "devices.capabilities.range", "brightness", GoveeApi.brightnessValue(next),
+                new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { }
+                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                });
+    }
+
+    private final java.util.Map<String, Integer> tempStep = new java.util.HashMap<>();
+    private void cycleTemp(GoveeModels.Device d) {
+        int[] presets = {2700, 4000, 5000, 6500};
+        int i = tempStep.containsKey(d.deviceId) ? (tempStep.get(d.deviceId) + 1) % presets.length : 0;
+        tempStep.put(d.deviceId, i);
+        govee.control(activity, d, "devices.capabilities.color_setting", "colorTemperature", GoveeApi.colorTempValue(presets[i]), true,
+                new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { post(() -> Toast.makeText(activity, presets[i] + "K", Toast.LENGTH_SHORT).show()); }
+                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                });
+    }
+
+    private void setRgb(GoveeModels.Device d, int r, int g, int b) {
+        govee.control(activity, d, "devices.capabilities.color_setting", "colorRgb", GoveeApi.rgbValue(r, g, b), true,
+                new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { }
+                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                });
+    }
+
     private void styleSegments(List<TextView> buttons) {
         String mode = prefs.getString("quiet_focus", "Off");
         for (TextView b : buttons) {
