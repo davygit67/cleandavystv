@@ -1008,6 +1008,8 @@ final class QuietMachineView extends LinearLayout {
 
     private void openCast() {
         try {
+            // Fire OS sometimes flashes stock Home while launching the receiver.
+            HomeRedirectService.allowStockHomeFor(8_000);
             activity.startActivity(CastLauncher.resolve(activity));
             Toast.makeText(activity, CastLauncher.WIN_K_INSTRUCTION, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
@@ -1017,6 +1019,8 @@ final class QuietMachineView extends LinearLayout {
 
     /** Recovery path: return to Amazon's system interface without disabling anything. */
     private void openStockHome() {
+        // Let the user actually remain in Amazon Home long enough to recover.
+        HomeRedirectService.allowStockHomeFor(120_000);
         try {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
             home.setPackage("com.amazon.tv.launcher");
