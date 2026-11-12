@@ -10,6 +10,8 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -26,14 +28,15 @@ public final class GoveeRepository {
         boolean available(GoveeModels.Device device);
     }
 
-    private static final long CACHE_TTL_MS = 15 * 60_1000L;
+    private static final long CACHE_TTL_MS = 15 * 60_000L;
 
     private final GoveeApi api;
     private final GoveeCredentialStore store = new GoveeCredentialStore();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable pendingFlush = this::flushPending;
-    /** Latest debounced request; only touched on the main thread. */
-    private Pending pending;
+    /** Latest request per device and capability, all owned by the main thread.
+     * A brightness change on one light must never cancel a command for another. */
+    private final Map<String, Pending> pending = new LinkedHashMap<>();
     private List<GoveeModels.Device> cache = Collections.emptyList();
     private long cachedAt;
 
@@ -57,7 +60,7 @@ public final class GoveeRepository {
     /** Drops any pending debounced send and stops the background thread. Safe to call more than once. */
     public void shutdown() {
         main.removeCallbacks(pendingFlush);
-        pending = null;
+        pending.clear();
         if (net instanceof java.util.concurrent.ExecutorService) {
             ((java.util.concurrent.ExecutorService) net).shutdownNow();
         }
@@ -134,17 +137,17 @@ public final class GoveeRepository {
         p.instance = instance;
         p.value = value;
         p.cb = onMain(cb);
-        pending = p;
+        pending.put(d.deviceId + "|" + type + "|" + instance, p);
         main.removeCallbacks(pendingFlush);
         main.postDelayed(pendingFlush, GoveeApi.CONTROL_FLOOR_MS);
     }
 
     /** Sends the latest pending request, if any, with the key it was scheduled with. */
     private void flushPending() {
-        Pending p = pending;
-        pending = null;
-        if (p == null) return;
-        api.controlAsync(p.key, GoveeApi.controlBody(p.sku, p.device, p.type, p.instance, p.value), p.cb);
+        List<Pending> batch = new ArrayList<>(pending.values());
+        pending.clear();
+        for (Pending p : batch)
+            api.controlAsync(p.key, GoveeApi.controlBody(p.sku, p.device, p.type, p.instance, p.value), p.cb);
     }
 
     private GoveeApi.Callback<Void> onMain(GoveeApi.Callback<Void> cb) {
