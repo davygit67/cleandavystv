@@ -26,6 +26,13 @@ public class HomeRedirectService extends AccessibilityService {
     private static final long SETTINGS_GRACE_MS = 2000;     // measured: settings window -> home flash ~200 ms
     private static final long BOOT_WINDOW_MS = 3 * 60_000;  // service connecting this soon after boot = boot
 
+    /** User-initiated stock Home/cast navigation may temporarily bypass redirect. */
+    private static volatile long allowStockHomeUntil;
+
+    static void allowStockHomeFor(long millis) {
+        allowStockHomeUntil = SystemClock.uptimeMillis() + Math.max(0, millis);
+    }
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable redirect = this::openLauncher;
     private long settingsSeenAt = -SETTINGS_GRACE_MS;
@@ -43,6 +50,7 @@ public class HomeRedirectService extends AccessibilityService {
         long now = SystemClock.uptimeMillis();
         for (String app : SETTINGS_APPS) if (pkg.toString().startsWith(app)) settingsSeenAt = now;
         handler.removeCallbacks(redirect);
+        if (now < allowStockHomeUntil) return;
         if (!AMAZON_LAUNCHER.contentEquals(pkg) || !cls.toString().contains(AMAZON_HOME)) return;
         if (now - settingsSeenAt < SETTINGS_GRACE_MS) return;
         handler.post(redirect);

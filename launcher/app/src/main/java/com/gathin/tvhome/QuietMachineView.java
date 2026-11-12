@@ -70,6 +70,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.gathin.tvhome.quiet.CastLauncher;
+import com.gathin.tvhome.quiet.QuietDesign;
 import com.gathin.tvhome.govee.GoveeApi;
 import com.gathin.tvhome.govee.GoveeModels;
 import com.gathin.tvhome.govee.GoveeRepository;
@@ -83,7 +84,7 @@ import java.util.function.IntConsumer;
  * Miracast receiver. Nothing shown here is invented: unavailable data says so.
  */
 final class QuietMachineView extends LinearLayout {
-    private static final int ORANGE = 0xfff36b21, ON_ORANGE = 0xfffaf8f2;
+    private static final int ORANGE = QuietDesign.ACCENT, ON_ORANGE = QuietDesign.ON_ACCENT;
     /** Palette tokens: Dark (the default) or Light, switched from Control and saved. */
     private int PAPER, RAIL, INSET, INK, LINE, TRACK, MUTED, GREEN;
     private static final String[] SCREENS = {"Home", "Library", "Search", "Lights", "Settings"};
@@ -96,7 +97,7 @@ final class QuietMachineView extends LinearLayout {
 
     private final Activity activity;
     private final AppAdapter adapter;
-    private final Runnable inputs, classic;
+    private final Runnable inputs;
     private final Config config;
     private final SharedPreferences prefs;
     private final Typeface light, regular, medium, variable;
@@ -122,9 +123,9 @@ final class QuietMachineView extends LinearLayout {
         }
     };
 
-    QuietMachineView(Activity a, AppAdapter apps, Runnable showInputs, Runnable showClassic) {
+    QuietMachineView(Activity a, AppAdapter apps, Runnable showInputs) {
         super(a);
-        activity = a; adapter = apps; inputs = showInputs; classic = showClassic;
+        activity = a; adapter = apps; inputs = showInputs;
         config = Config.load(a);
         prefs = a.getPreferences(0);
         palette(prefs.getBoolean("quiet_dark", true));
@@ -135,14 +136,14 @@ final class QuietMachineView extends LinearLayout {
         setOrientation(HORIZONTAL);
         setBackgroundColor(PAPER);
         rail = column();
-        rail.setBackgroundColor(RAIL);
-        rail.setPadding(d(22), d(52), d(8), d(24));
-        addView(rail, new LayoutParams(d(166), -1));
+        paintRail();
+        rail.setPadding(d(16), d(38), d(6), d(24));
+        addView(rail, new LayoutParams(d(138), -1));
         View divider = new View(a);
         divider.setBackgroundColor(LINE);
         addView(divider, new LayoutParams(d(1), -1));
         body = column();
-        body.setPadding(d(28), d(30), d(36), d(22));
+        body.setPadding(d(24), d(28), d(28), d(20));
         addView(body, new LayoutParams(0, -1, 1));
         IntentFilter filter = new IntentFilter(Intent.ACTION_TIME_TICK);
         filter.addAction(Intent.ACTION_TIME_CHANGED);
@@ -154,22 +155,31 @@ final class QuietMachineView extends LinearLayout {
         show("Home");
     }
 
+    /** Shared material tokens; the design system is used by the actual UI, not a dead style file. */
     private void palette(boolean dark) {
-        PAPER = dark ? 0xff1b1b19 : 0xfff2f0e9;
-        RAIL = dark ? 0xff222220 : 0xffebe8df;
-        INSET = dark ? 0xff2f2e2b : 0xffe2dfd5;
-        INK = dark ? 0xffeceae2 : 0xff222220;
-        LINE = dark ? 0xff3d3c38 : 0xffc9c7be;
-        TRACK = dark ? 0xff4b4a45 : 0xffbcb9af;
-        MUTED = dark ? 0xff9c9a90 : 0xff6c6a62;
-        GREEN = dark ? 0xff6fae7d : 0xff5e9a6c;
+        PAPER = dark ? QuietDesign.DARK_PAPER : QuietDesign.LIGHT_PAPER;
+        RAIL = dark ? QuietDesign.DARK_SURFACE_SOLID : QuietDesign.LIGHT_SURFACE_SOLID;
+        INSET = dark ? QuietDesign.DARK_INSET : QuietDesign.LIGHT_INSET;
+        INK = dark ? QuietDesign.DARK_INK : QuietDesign.LIGHT_INK;
+        LINE = dark ? QuietDesign.DARK_LINE : QuietDesign.LIGHT_LINE;
+        TRACK = dark ? QuietDesign.DARK_TRACK : QuietDesign.LIGHT_TRACK;
+        MUTED = dark ? QuietDesign.DARK_MUTED : QuietDesign.LIGHT_MUTED;
+        GREEN = dark ? QuietDesign.DARK_GREEN : QuietDesign.LIGHT_GREEN;
+    }
+
+    private void paintRail() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        rail.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF28292D : 0xFFF6F5F0,
+                dark ? 0xFF1D1E22 : 0xFFE8E6DF,
+                0x00000000));
     }
     private void toggleAppearance() {
         boolean dark = !prefs.getBoolean("quiet_dark", true);
         prefs.edit().putBoolean("quiet_dark", dark).apply();
         palette(dark);
         setBackgroundColor(PAPER);
-        rail.setBackgroundColor(RAIL);
+        paintRail();
         getChildAt(1).setBackgroundColor(LINE);
         show(screen);
         post(() -> { View t = findViewWithTag("appearance"); if (t != null) t.requestFocus(); });
@@ -204,9 +214,18 @@ final class QuietMachineView extends LinearLayout {
         g.setColor(fill); g.setCornerRadius(radius); g.setStroke(width, stroke);
         return g;
     }
-    private Drawable resting() { return frame(PAPER, LINE, d(1), d(12)); }
-    /** Focus is never colour alone: a thicker outline, an inset fill and a gentle scale (tiles add an underline). */
-    private Drawable focusRing() { return frame(INSET, ORANGE, d(2), d(14)); }
+    /** Quiet glass: a soft material tint at rest, rather than an outlined box around everything. */
+    private Drawable resting() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        return QuietDesign.glassPanel(activity,
+                dark ? 0x922B2C32 : 0xD6EAE8E2, 0x00000000);
+    }
+    /** Clear D-pad focus with a restrained accent rim instead of neon/glowing effects. */
+    private Drawable focusRing() {
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        return QuietDesign.glassPanel(activity,
+                dark ? 0xED35363C : 0xFFF7F5F0, ORANGE);
+    }
     private void focusable(View v, boolean framed, Runnable action, Consumer<Boolean> also) {
         v.setFocusable(true);
         v.setClickable(true);
@@ -217,8 +236,15 @@ final class QuietMachineView extends LinearLayout {
             w.setBackground(focus ? focusRing() : framed ? resting() : null);
             boolean reduce = prefs.getBoolean("quiet_reduce_motion", false);
             float target = focus ? 1.04f : 1f;
-            if (reduce) w.setScaleX(target == 1f ? 1f : 1.01f);
-            else w.animate().scaleX(target).scaleY(target).setDuration(focus ? 140 : 100).start();
+            w.animate().cancel();
+            if (reduce) {
+                float scale = focus ? 1.01f : 1f;
+                w.setScaleX(scale);
+                w.setScaleY(scale);
+            } else {
+                w.animate().scaleX(target).scaleY(target)
+                        .setDuration(focus ? QuietDesign.FOCUS_MS : 110).start();
+            }
             if (also != null) also.accept(focus);
         });
     }
@@ -369,60 +395,67 @@ final class QuietMachineView extends LinearLayout {
         if (greeting != null) greeting.setText(QuietMachineModel.greeting(LocalTime.now().getHour()) + ",\n"
                 + (config.greetingName.isEmpty() ? "Davy" : config.greetingName));
     }
+    /** Photo-first TV layout: a calm header, cinematic hero and compact shelf. */
     private void homeContent() {
         LinearLayout header = row();
-        greeting = text("", 24, light, INK);
-        greeting.setLineSpacing(d(4), 1f);
+        greeting = text("", 27, light, INK);
+        greeting.setLineSpacing(d(3), 1f);
         updateGreeting();
-        header.addView(greeting, new LayoutParams(0, -2, 1.3f));
-        View rule = hairline(true, 76);
-        ((LayoutParams) rule.getLayoutParams()).setMarginEnd(d(22));
-        header.addView(rule);
+        header.addView(greeting, new LayoutParams(0, -2, 1));
         LinearLayout time = column();
+        time.setGravity(Gravity.END);
         TextClock date = new TextClock(activity);
         date.setFormat24Hour("EEE d MMM");
         date.setFormat12Hour("EEE d MMM");
         date.setAllCaps(true);
-        date.setLetterSpacing(.16f);
+        date.setLetterSpacing(.12f);
         date.setTypeface(medium);
-        date.setTextSize(10.5f);
-        date.setTextColor(INK);
+        date.setTextSize(10);
+        date.setTextColor(MUTED);
+        date.setGravity(Gravity.END);
         TextClock clock = new TextClock(activity);
         clock.setFormat24Hour("HH:mm");
         clock.setFormat12Hour("HH:mm");
         clock.setTypeface(variable);
-        clock.setFontVariationSettings("'wght' 620");
-        clock.setTextSize(50);
+        clock.setFontVariationSettings("'wght' 530");
+        clock.setTextSize(42);
         clock.setTextColor(INK);
         clock.setIncludeFontPadding(false);
-        clock.setFontFeatureSettings("tnum");
-        time.addView(date);
-        space(time, 8);
-        time.addView(clock);
-        header.addView(time, new LayoutParams(0, -2, 1f));
+        clock.setGravity(Gravity.END);
+        time.addView(date, new LayoutParams(-1, -2));
+        space(time, 3);
+        time.addView(clock, new LayoutParams(-1, -2));
+        header.addView(time, new LayoutParams(d(190), -2));
+        body.addView(header, new LayoutParams(-1, d(88)));
+        space(body, 12);
+
         FrameLayout photograph = new FrameLayout(activity);
         photograph.setTag("photograph");
         photograph.setId(View.generateViewId());
         focusable(photograph, true, () -> {
-            prefs.edit().putInt("quiet_picture", Math.floorMod(prefs.getInt("quiet_picture", 0) + 1, 3)).apply();
+            prefs.edit().putInt("quiet_picture", Math.floorMod(
+                    prefs.getInt("quiet_picture", 0) + 1, 3)).apply();
             loadPhotograph(photograph);
         }, null);
-        header.addView(photograph, new LayoutParams(0, d(150), 2.2f));
-        LinearLayout status = column();
-        status.setGravity(Gravity.END);
+        body.addView(photograph, new LayoutParams(-1, d(192)));
+        space(body, 15);
+
+        LinearLayout shelfHeader = row();
+        shelfHeader.addView(caps("QUICK ACCESS", 9.5f, medium, MUTED));
+        shelfHeader.addView(flex());
         statusDot = new View(activity);
         statusDot.setBackground(frame(GREEN, GREEN, 0, d(4)));
         statusDot.setContentDescription("Network connected");
         statusDot.setVisibility(online() ? VISIBLE : INVISIBLE);
-        status.addView(statusDot, new LayoutParams(d(7), d(7)));
-        LayoutParams sp = new LayoutParams(d(22), d(150));
-        header.addView(status, sp);
-        body.addView(header, new LayoutParams(-1, d(160)));
-        space(body, 32);
+        shelfHeader.addView(statusDot, new LayoutParams(d(7), d(7)));
+        body.addView(shelfHeader);
+        space(body, 8);
 
         List<AppAdapter.Entry> apps = new ArrayList<>();
-        for (AppAdapter.Entry app : adapter.quietEntries()) if (app.kind != AppAdapter.Entry.EMPTY) apps.add(app);
-        boolean fit = apps.size() + 1 <= 5;
+        for (AppAdapter.Entry app : adapter.quietEntries())
+            if (app.kind != AppAdapter.Entry.EMPTY) apps.add(app);
+        // Count all three utility tiles before deciding whether the shelf fits.
+        boolean fit = apps.size() + 3 <= 5;
         HorizontalScrollView scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false);
         scroll.setFillViewport(fit);
@@ -431,33 +464,34 @@ final class QuietMachineView extends LinearLayout {
         tiles.setGravity(Gravity.TOP);
         View watch = tile(glyphTile(), "Watch", true, inputs, null);
         watch.setTag("watch");
-        watch.setContentDescription("Watch: live TV and HDMI inputs");
+        watch.setContentDescription("Watch: TV and HDMI inputs");
         inputAnchor = watch;
         defaultFocus = watch;
         tiles.addView(watch, tileParams(fit, false));
         View pc = tile(glyph(Glyph.DISPLAY, INK, false, 30), "PC Cast", true, this::openCast, null);
         pc.setTag("pc-cast");
-        pc.setContentDescription("PC Cast: open the TV screen-mirroring receiver");
+        pc.setContentDescription("PC Cast: screen-mirroring receiver");
         tiles.addView(pc, tileParams(fit, false));
-        View lights = tile(glyph(Glyph.LIGHT, INK, false, 30), "Lights", true, () -> show("Lights"), null);
+        View lights = tile(glyph(Glyph.LIGHT, INK, false, 30), "Lights", true,
+                () -> show("Lights"), null);
         lights.setTag("lights");
-        lights.setContentDescription("Lights: Govee smart lights");
         tiles.addView(lights, tileParams(fit, false));
         for (int i = 0; i < apps.size(); i++) {
             AppAdapter.Entry app = apps.get(i);
-            View t = tile(appArt(app), app.label, false, () -> adapter.quietLaunch(app), app);
+            View t = tile(appArt(app), app.label, false,
+                    () -> adapter.quietLaunch(app), app);
             t.setTag(app.component.flattenToString());
             tiles.addView(t, tileParams(fit, i == apps.size() - 1));
         }
-        // Up from any tile goes to the panorama, never sideways into the rail; Down comes back to WATCH.
-        for (int i = 0; i < tiles.getChildCount(); i++) tiles.getChildAt(i).setNextFocusUpId(photograph.getId());
+        for (int i = 0; i < tiles.getChildCount(); i++)
+            tiles.getChildAt(i).setNextFocusUpId(photograph.getId());
         watch.setId(View.generateViewId());
         photograph.setNextFocusDownId(watch.getId());
         scroll.addView(tiles);
-        body.addView(scroll, new LayoutParams(-1, d(178)));
+        body.addView(scroll, new LayoutParams(-1, d(124)));
         body.addView(flex());
         LinearLayout foot = row();
-        foot.addView(caps("OK  open     ·     Menu  app info     ·     Back  home", 9, regular, MUTED));
+        foot.addView(caps("OK  open    ·    Back  home", 9, regular, MUTED));
         foot.addView(flex());
         credit = caps("", 9, regular, MUTED);
         foot.addView(credit);
@@ -482,12 +516,12 @@ final class QuietMachineView extends LinearLayout {
     private View tile(View art, String label, boolean caps, Runnable action, AppAdapter.Entry app) {
         LinearLayout t = column();
         t.setGravity(Gravity.CENTER_HORIZONTAL);
-        t.setPadding(d(10), d(34), d(10), d(12));
+        t.setPadding(d(9), d(15), d(9), d(6));
         LinearLayout artBox = column();
         artBox.setGravity(Gravity.CENTER);
         artBox.addView(art);
-        t.addView(artBox, new LayoutParams(-1, d(52)));
-        space(t, 14);
+        t.addView(artBox, new LayoutParams(-1, d(46)));
+        space(t, 9);
         TextView name = caps ? caps(label, 11.5f, medium, INK) : text(label, 13.5f, regular, INK);
         name.setGravity(Gravity.CENTER);
         name.setSingleLine();
@@ -497,7 +531,7 @@ final class QuietMachineView extends LinearLayout {
         bar.setBackgroundColor(ORANGE);
         bar.setVisibility(INVISIBLE);
         LayoutParams bp = new LayoutParams(d(58), d(3));
-        bp.topMargin = d(12);
+        bp.topMargin = d(7);
         t.addView(bar, bp);
         focusable(t, true, action, focus -> bar.setVisibility(focus ? VISIBLE : INVISIBLE));
         if (app != null && app.kind == AppAdapter.Entry.APP) t.setOnKeyListener((v, key, e) -> appInfoKey(key, e, app.pkg));
@@ -802,7 +836,11 @@ final class QuietMachineView extends LinearLayout {
     private LinearLayout card(LinearLayout parent, String title, int glyphType, boolean last) {
         LinearLayout card = column();
         card.setPadding(d(16), d(16), d(16), d(14));
-        card.setBackground(resting());
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        card.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF292A30 : 0xFFF7F6F2,
+                dark ? 0xFF212228 : 0xFFEAE8E1,
+                0x00000000));
         LinearLayout top = row();
         top.setGravity(Gravity.TOP);
         top.addView(caps(title, 9.5f, medium, INK), new LayoutParams(0, -2, 1));
@@ -885,11 +923,9 @@ final class QuietMachineView extends LinearLayout {
         }
 
         LinearLayout ambient = card(cards, "Ambient light", Glyph.LIGHT, false);
-        ambient.addView(text("Not connected", 20, regular, MUTED));
+        ambient.addView(text("Your lights", 21, regular, INK));
         ambient.addView(flex());
-        ambient.addView(new Meter(false, 100, null, null), new LayoutParams(-1, d(30)));
-        ambient.addView(scale("—", "—"));
-        TextView none = text("Govee cloud control  ·  open Lights for devices", 9.5f, regular, MUTED);
+        TextView none = text("Control room lights and TV backlight in Lights", 11, regular, MUTED);
         none.setPadding(0, d(6), 0, 0);
         ambient.addView(none);
         space(ambient, 8);
@@ -972,6 +1008,8 @@ final class QuietMachineView extends LinearLayout {
 
     private void openCast() {
         try {
+            // Fire OS sometimes flashes stock Home while launching the receiver.
+            HomeRedirectService.allowStockHomeFor(8_000);
             activity.startActivity(CastLauncher.resolve(activity));
             Toast.makeText(activity, CastLauncher.WIN_K_INSTRUCTION, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
@@ -981,6 +1019,8 @@ final class QuietMachineView extends LinearLayout {
 
     /** Recovery path: return to Amazon's system interface without disabling anything. */
     private void openStockHome() {
+        // Let the user actually remain in Amazon Home long enough to recover.
+        HomeRedirectService.allowStockHomeFor(120_000);
         try {
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
             home.setPackage("com.amazon.tv.launcher");
@@ -1103,8 +1143,12 @@ final class QuietMachineView extends LinearLayout {
                         list.addView(deviceRow(tv, true));
                         space(list, 10);
                     }
-                    TextView all = quietButton("All lights on/off", () -> toggleAll(devices));
-                    list.addView(all);
+                    LinearLayout group = row();
+                    group.addView(quietButton("All lights on", () -> toggleAll(devices, true)));
+                    LayoutParams allGap = new LayoutParams(-2, -2);
+                    allGap.setMarginStart(d(10));
+                    group.addView(quietButton("All lights off", () -> toggleAll(devices, false)), allGap);
+                    list.addView(group);
                     space(list, 10);
                     for (GoveeModels.Device d : devices) {
                         if (d == tv) continue;
@@ -1125,62 +1169,80 @@ final class QuietMachineView extends LinearLayout {
         });
     }
 
-    private View deviceRow(GoveeModels.Device d, boolean highlight) {
-        LinearLayout row = column();
-        row.setPadding(d(16), d(14), d(16), d(12));
-        row.setBackground(resting());
-        LinearLayout top = row();
-        TextView name = text(d.name + (d.online ? "" : "  ·  offline"), 13.5f, medium, d.online ? INK : MUTED);
+    /** D-pad-friendly lighting controls. Each option is an advertised API instance. */
+    private View deviceRow(GoveeModels.Device d, boolean likelyBacklight) {
+        LinearLayout panel = column();
+        panel.setPadding(d(18), d(16), d(18), d(16));
+        boolean dark = prefs.getBoolean("quiet_dark", true);
+        panel.setBackground(QuietDesign.aluminumPanel(activity,
+                dark ? 0xFF28292F : 0xFFF7F6F2,
+                dark ? 0xFF202126 : 0xFFEAE8E1, 0x00000000));
+
+        LinearLayout heading = row();
+        TextView name = text(d.name, 17, medium, INK);
         name.setSingleLine();
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        top.addView(name, new LayoutParams(0, -2, 1));
-        top.addView(caps(d.sku, 9, regular, MUTED));
-        row.addView(top);
-        space(row, 4);
-        StringBuilder caps = new StringBuilder();
-        if (d.supports(GoveeModels.CAP_POWER)) caps.append("Power  ");
-        if (d.supports(GoveeModels.CAP_BRIGHTNESS)) caps.append("Brightness  ");
-        if (d.supports(GoveeModels.CAP_COLOR_RGB)) caps.append("Color  ");
-        if (d.supports(GoveeModels.CAP_COLOR_TEMP)) caps.append("Temp  ");
-        if (d.supports(GoveeModels.CAP_SCENE)) caps.append("Scenes");
-        if (caps.length() == 0) caps.append("No controllable capabilities reported");
-        if (highlight) caps.insert(0, "TV backlight  ·  ");
-        row.addView(text(caps.toString().trim(), 10, regular, MUTED));
-        space(row, 8);
-        LinearLayout buttons = row();
-        if (d.supports(GoveeModels.CAP_POWER) && d.online) {
-            TextView on = quietButton("On", () -> power(d, true));
-            TextView off = quietButton("Off", () -> power(d, false));
-            buttons.addView(on);
-            LayoutParams g = new LayoutParams(-2, -2);
-            g.setMarginStart(d(10));
-            buttons.addView(off, g);
-            if (d.supports(GoveeModels.CAP_BRIGHTNESS)) {
-                TextView dim = quietButton("Dim -", () -> nudgeBrightness(d, -10));
-                TextView up = quietButton("Bright +", () -> nudgeBrightness(d, 10));
-                buttons.addView(dim, new LayoutParams(g));
-                buttons.addView(up, new LayoutParams(g));
-            }
-            if (d.supports(GoveeModels.CAP_COLOR_TEMP)) {
-                TextView temp = quietButton("Warmer/cooler", () -> cycleTemp(d));
-                buttons.addView(temp, new LayoutParams(g));
-            }
-            if (d.supports(GoveeModels.CAP_COLOR_RGB)) {
-                TextView warm = quietButton("Warm white", () -> setRgb(d, 255, 190, 120));
-                buttons.addView(warm, new LayoutParams(g));
-            }
-        } else {
-            buttons.addView(text(d.online ? "This model reports no switchable control" : "Offline — controls hidden", 11, regular, MUTED));
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        heading.addView(name, new LayoutParams(0, -2, 1));
+        heading.addView(caps(d.sku, 9.5f, regular, MUTED));
+        panel.addView(heading);
+        if (likelyBacklight) {
+            space(panel, 4);
+            panel.addView(text("POSSIBLE TV BACKLIGHT", 9.5f, medium, MUTED));
         }
-        row.addView(buttons);
-        return row;
+        if (!d.online) {
+            space(panel, 8);
+            panel.addView(text("Reported offline — controls unavailable", 11, regular, MUTED));
+            return panel;
+        }
+        if (d.supports(GoveeModels.CAP_POWER, "powerSwitch")) {
+            LinearLayout group = controlStrip(panel, "POWER");
+            addControl(group, "On", () -> power(d, true));
+            addControl(group, "Off", () -> power(d, false));
+        }
+        if (d.supports(GoveeModels.CAP_BRIGHTNESS, "brightness")) {
+            LinearLayout group = controlStrip(panel, "BRIGHTNESS");
+            for (int pct : new int[]{25, 50, 75, 100})
+                addControl(group, pct + "%", () -> setBrightness(d, pct));
+        }
+        if (d.supports(GoveeModels.CAP_COLOR_TEMP, "colorTemperatureK")) {
+            LinearLayout group = controlStrip(panel, "WHITE TEMPERATURE");
+            addControl(group, "Warm", () -> setTemperature(d, 2700));
+            addControl(group, "Neutral", () -> setTemperature(d, 4000));
+            addControl(group, "Cool", () -> setTemperature(d, 6500));
+        }
+        if (d.supports(GoveeModels.CAP_COLOR_RGB, "colorRgb")) {
+            LinearLayout group = controlStrip(panel, "COLOR");
+            addControl(group, "Amber", () -> setRgb(d, 255, 160, 60));
+            addControl(group, "Blue", () -> setRgb(d, 58, 124, 255));
+            addControl(group, "Violet", () -> setRgb(d, 160, 88, 255));
+            addControl(group, "White", () -> setRgb(d, 255, 255, 255));
+        }
+        if (panel.getChildCount() <= (likelyBacklight ? 2 : 1))
+            panel.addView(text("No supported direct lighting controls reported", 11, regular, MUTED));
+        return panel;
     }
 
-    private void toggleAll(List<GoveeModels.Device> devices) {
-        for (GoveeModels.Device d : devices) {
-            if (d.online && d.supports(GoveeModels.CAP_POWER)) power(d, true);
-        }
-        Toast.makeText(activity, "All lights on (tap Off on a device to switch one off)", Toast.LENGTH_SHORT).show();
+    private LinearLayout controlStrip(LinearLayout panel, String title) {
+        space(panel, 11);
+        panel.addView(caps(title, 9, medium, MUTED));
+        space(panel, 6);
+        LinearLayout controls = row();
+        panel.addView(controls);
+        return controls;
+    }
+
+    private void addControl(LinearLayout controls, String label, Runnable command) {
+        TextView button = quietButton(label, command);
+        LayoutParams lp = new LayoutParams(0, d(39), 1);
+        if (controls.getChildCount() > 0) lp.setMarginStart(d(9));
+        controls.addView(button, lp);
+    }
+
+    /** All On and All Off are separate, explicit actions. */
+    private void toggleAll(List<GoveeModels.Device> devices, boolean on) {
+        for (GoveeModels.Device d : devices)
+            if (d.online && d.supports(GoveeModels.CAP_POWER, "powerSwitch"))
+                power(d, on);
     }
 
     private void power(GoveeModels.Device d, boolean on) {
@@ -1191,27 +1253,24 @@ final class QuietMachineView extends LinearLayout {
                 });
     }
 
-    private final java.util.Map<String, Integer> brightnessGuess = new java.util.HashMap<>();
-    private void nudgeBrightness(GoveeModels.Device d, int delta) {
-        int cur = brightnessGuess.containsKey(d.deviceId) ? brightnessGuess.get(d.deviceId) : 60;
-        int next = Math.max(1, Math.min(100, cur + delta));
-        brightnessGuess.put(d.deviceId, next);
-        govee.control(activity, d, "devices.capabilities.range", "brightness", GoveeApi.brightnessValue(next), false,
-                new GoveeApi.Callback<Void>() {
+    /** Absolute brightness presets avoid claiming to know a status we have not queried. */
+    private void setBrightness(GoveeModels.Device device, int percent) {
+        govee.control(activity, device, GoveeModels.CAP_BRIGHTNESS, "brightness",
+                GoveeApi.brightnessValue(percent), false, new GoveeApi.Callback<Void>() {
                     @Override public void ok(Void v) { }
-                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                    @Override public void err(String m) {
+                        post(() -> Toast.makeText(activity, "Brightness failed: " + m, Toast.LENGTH_LONG).show());
+                    }
                 });
     }
 
-    private final java.util.Map<String, Integer> tempStep = new java.util.HashMap<>();
-    private void cycleTemp(GoveeModels.Device d) {
-        int[] presets = {2700, 4000, 5000, 6500};
-        int i = tempStep.containsKey(d.deviceId) ? (tempStep.get(d.deviceId) + 1) % presets.length : 0;
-        tempStep.put(d.deviceId, i);
-        govee.control(activity, d, "devices.capabilities.color_setting", "colorTemperature", GoveeApi.colorTempValue(presets[i]), true,
-                new GoveeApi.Callback<Void>() {
-                    @Override public void ok(Void v) { post(() -> Toast.makeText(activity, presets[i] + "K", Toast.LENGTH_SHORT).show()); }
-                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+    private void setTemperature(GoveeModels.Device device, int kelvin) {
+        govee.control(activity, device, GoveeModels.CAP_COLOR_TEMP, "colorTemperatureK",
+                GoveeApi.colorTempValue(kelvin), true, new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { }
+                    @Override public void err(String m) {
+                        post(() -> Toast.makeText(activity, "Temperature failed: " + m, Toast.LENGTH_LONG).show());
+                    }
                 });
     }
 

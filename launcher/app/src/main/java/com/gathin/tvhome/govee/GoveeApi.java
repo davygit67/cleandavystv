@@ -80,18 +80,25 @@ public final class GoveeApi {
     List<GoveeModels.Device> listDevices(String apiKey) throws Exception {
         JSONObject root = get(apiKey, PATH_DEVICES);
         List<GoveeModels.Device> out = new ArrayList<>();
-        JSONObject data = root.optJSONObject("data");
-        if (data == null) throw new Exception("code " + root.optInt("code", -1) + ": unexpected response");
-        JSONArray devices = data.optJSONArray("devices");
-        if (devices == null) return out;
+        // The current Govee v2 devices endpoint returns data as an ARRAY,
+        // not { devices: [...] }. Accept the wrapped shape as a compatibility fallback.
+        JSONArray devices = root.optJSONArray("data");
+        if (devices == null) {
+            JSONObject wrapped = root.optJSONObject("data");
+            devices = wrapped == null ? null : wrapped.optJSONArray("devices");
+        }
+        if (devices == null) throw new Exception("Unexpected Govee device-list response");
         for (int i = 0; i < devices.length(); i++) {
             JSONObject d = devices.optJSONObject(i);
             if (d == null) continue;
             String sku = d.optString("sku", "");
             String device = d.optString("device", "");
             String name = d.optString("deviceName", device);
-            boolean online = !"offline".equalsIgnoreCase(d.optString("online", "online"));
+            // Device-list responses do not always contain live online state.
+            // Unknown status must not suppress otherwise supported controls.
+            boolean online = !d.has("online") || d.optBoolean("online", true);
             Set<String> caps = new HashSet<>();
+            Set<String> instances = new HashSet<>();
             Map<String, Object> fields = new HashMap<>();
             JSONArray list = d.optJSONArray("capabilities");
             if (list != null) {
@@ -99,12 +106,17 @@ public final class GoveeApi {
                     JSONObject c = list.optJSONObject(j);
                     if (c == null) continue;
                     String type = c.optString("type", "");
-                    if (!type.isEmpty()) caps.add(type);
-                    JSONObject field = c.optJSONObject("field");
-                    if (field != null) fields.put(type, field.toString());
+                    String instance = c.optString("instance", "");
+                    if (type.isEmpty() || instance.isEmpty()) continue;
+                    caps.add(type);
+                    String id = type + "|" + instance;
+                    instances.add(id);
+                    JSONObject parameters = c.optJSONObject("parameters");
+                    if (parameters != null) fields.put(id, parameters.toString());
                 }
             }
-            if (!device.isEmpty()) out.add(new GoveeModels.Device(sku, device, name, online, caps, fields));
+            if (!device.isEmpty()) out.add(new GoveeModels.Device(
+                    sku, device, name, online, caps, fields, instances));
         }
         return out;
     }
@@ -112,7 +124,7 @@ public final class GoveeApi {
     // ---- request builders (pure, unit-tested) ----
 
     public static JSONObject controlBody(String sku, String device, String type,
-                                         String capability, JSONObject value) {
+                                         String capability, Object value) {
         try {
             JSONObject body = new JSONObject();
             body.put("requestId", java.util.UUID.randomUUID().toString());
@@ -122,45 +134,28 @@ public final class GoveeApi {
                     .put("capability", new JSONObject()
                             .put("type", type)
                             .put("instance", capability)
-                            .put("value", value == null ? new JSONObject() : value)));
+                            .put("value", value == null ? JSONObject.NULL : value)));
             return body;
         } catch (org.json.JSONException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static JSONObject onOffValue(boolean on) {
-        // Govee on_off instance "powerSwitch": 1 on / 0 off.
-        try {
-            return new JSONObject().put("powerSwitch", on ? 1 : 0);
-        } catch (org.json.JSONException e) {
-            throw new RuntimeException(e);
-        }
+    /** The v2 API expects a primitive integer for these instances, NOT a JSON object. */
+    public static int onOffValue(boolean on) {
+        return on ? 1 : 0;
     }
 
-    public static JSONObject brightnessValue(int pct) {
-        try {
-            return new JSONObject().put("brightness", Math.max(1, Math.min(100, pct)));
-        } catch (org.json.JSONException e) {
-            throw new RuntimeException(e);
-        }
+    public static int brightnessValue(int pct) {
+        return GoveePayloads.clampBrightness(pct);
     }
 
-    public static JSONObject colorTempValue(int kelvin) {
-        try {
-            return new JSONObject().put("colorTemperature", kelvin);
-        } catch (org.json.JSONException e) {
-            throw new RuntimeException(e);
-        }
+    public static int colorTempValue(int kelvin) {
+        return kelvin;
     }
 
-    public static JSONObject rgbValue(int r, int g, int b) {
-        try {
-            return new JSONObject()
-                    .put("colorRgb", ((r & 255) << 16) | ((g & 255) << 8) | (b & 255));
-        } catch (org.json.JSONException e) {
-            throw new RuntimeException(e);
-        }
+    public static int rgbValue(int r, int g, int b) {
+        return GoveePayloads.rgb(r, g, b);
     }
 
     // ---- http ----
