@@ -417,6 +417,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     private java.util.Map<Integer, String> homeAppKeys = java.util.Collections.emptyMap();
 
+    private QuietMachineView quietMachine;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -897,6 +899,47 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                     .build(), vpnCallback);
         }
+        if (!getPreferences(0).getBoolean("quiet_classic", false)) {
+            // Keep Classic alive for its existing launch/input logic, but isolate every descendant
+            // from drawing, accessibility and focus (including delayed Classic callbacks).
+            FrameLayout classicSurface = new FrameLayout(this);
+            while (root.getChildCount() > 0) {
+                View child = root.getChildAt(0);
+                root.removeView(child);
+                classicSurface.addView(child);
+            }
+            classicSurface.setVisibility(View.INVISIBLE);
+            classicSurface.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            classicSurface.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            root.addView(classicSurface, new FrameLayout.LayoutParams(-1, -1));
+            quietMachine = new QuietMachineView(this, adapter, this::showInputs, () -> {
+                getPreferences(0).edit().putBoolean("quiet_classic", true).apply();
+                recreate();
+            });
+            root.addView(quietMachine, new FrameLayout.LayoutParams(-1, -1));
+            grid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+            for (View v : new View[]{btnInputs, btnWifi, btnVpn, btnReorder, btnLibraryTop, btnSettings}) v.setFocusable(false);
+        } else {
+            TextView quietReturn = new TextView(this);
+            quietReturn.setText("Quiet Machine"); quietReturn.setTextColor(0xff222220);
+            quietReturn.setBackgroundColor(0xfff2f0e9); quietReturn.setPadding(16, 12, 16, 12);
+            quietReturn.setFocusable(true);
+            quietReturn.setOnClickListener(v -> { getPreferences(0).edit().putBoolean("quiet_classic", false).apply(); recreate(); });
+            quietReturn.setOnFocusChangeListener((v, f) -> v.setBackgroundColor(f ? 0xfff36b21 : 0xfff2f0e9));
+            // The grid keeps focus at its edges, so the way back is Right from the Settings pill (Up or Left returns).
+            btnSettings.setOnKeyListener((v, keyCode, event) -> {
+                if (keyCode != KeyEvent.KEYCODE_DPAD_RIGHT || rtlMenuBar) return pillKeys.onKey(v, keyCode, event);
+                if (event.getAction() == KeyEvent.ACTION_DOWN) quietReturn.requestFocus();
+                return true;
+            });
+            quietReturn.setOnKeyListener((v, keyCode, event) -> {
+                if (keyCode != KeyEvent.KEYCODE_DPAD_UP && keyCode != KeyEvent.KEYCODE_DPAD_LEFT) return false;
+                if (event.getAction() == KeyEvent.ACTION_DOWN) btnSettings.requestFocus();
+                return true;
+            });
+            FrameLayout.LayoutParams qp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
+            root.addView(quietReturn, qp);
+        }
         // Not after recreate(): the launch intent survives it and would open the settings again.
         if (savedInstanceState == null && !openLauncherSettingsIfAsked(getIntent())) openInputsIfAsked(getIntent());
     }
@@ -969,6 +1012,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (quietMachine != null) quietMachine.home();
         if (gameDay != null && !stopped) gameDay.read();
         grid.scrollToPosition(0);
         lastFocused = 0;
@@ -999,6 +1043,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        if (quietMachine != null) quietMachine.resume();
         resumed = true;
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
@@ -1044,8 +1089,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (showStats) startStats();
         if (gameDay != null) gameDay.start();
-        sky.update();
-        wallpaperPlayer.start();
+        if (quietMachine == null) {
+            sky.update();
+            wallpaperPlayer.start();
+        }
         handler.postDelayed(minuteTick, MINUTE_MS);
         if (festive && diya != null) {
             diya.start();
@@ -1101,6 +1148,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *                 on a return to the same tiles it would only mark a change that didn't happen.
      */
     private void reloadApps(boolean animate, boolean rebuild, boolean entrance) {
+        if (quietMachine != null) {
+            if (rebuild) reloadTiles();
+            tilesReady = true;
+            quietMachine.focusDefault();
+            return;
+        }
         cancelPendingFocusScroll();
         RecyclerView.ViewHolder footer = grid.findViewHolderForAdapterPosition(adapter.appCount());
         final boolean restoreLibrary = adapter.isLibraryAt(adapter.appCount()) && footer != null
@@ -1174,6 +1227,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps,
                 () -> Cards.load(Cards.storeFile(this)), leanback), none) : none;
         adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), leanback);
+        if (quietMachine != null) quietMachine.refresh();
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
         packageSequence = currentPackageSequence(packageSequence);
@@ -1278,6 +1332,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onDestroy() {
+        if (quietMachine != null) quietMachine.dispose();
         super.onDestroy();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
@@ -1326,6 +1381,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
         if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
         if (handleSettingsKey(event)) return true;
+        if (quietMachine != null) {
+            boolean handled = super.dispatchKeyEvent(event);
+            if (event.getAction() == KeyEvent.ACTION_UP && (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP
+                    || event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN || event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_MUTE))
+                quietMachine.postDelayed(quietMachine::resume, 100);
+            return handled;
+        }
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();
@@ -1652,6 +1714,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onBackPressed() {
+        if (quietMachine != null) quietMachine.back();
         // Home screen: Back goes nowhere.
     }
 
@@ -2502,6 +2565,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void focusTile(int position) {
+        if (quietMachine != null) { quietMachine.focusDefault(); return; }
         libraryFocusPending = false;
         cancelPendingFocusScroll();
         if (adapter.appCount() == 0) {
@@ -3172,6 +3236,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // keeps its usual place.
         boolean underGear = topMenu;
         View anchor = findViewById(underGear ? R.id.btnSettings : R.id.btnInputs);
+        if (quietMachine != null) anchor = quietMachine.inputAnchor();
         View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
         LinearLayout rows = panel.findViewById(R.id.rows);
 

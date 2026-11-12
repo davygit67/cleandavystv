@@ -233,6 +233,32 @@
             </intent-filter>
         </receiver>
 
+        <!-- Fork compatibility (cleandavystv): the components the replaced Fire TV build had enabled, under the same
+             names, so an in-place update keeps the TV's existing accessibility and screensaver settings working.
+             Neither is turned on by installing; see HomeRedirectService and PhotoDream. -->
+        <service
+            android:name=".HomeRedirectService"
+            android:exported="true"
+            android:label="@string/home_redirect_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_redirect_service" />
+        </service>
+        <service
+            android:name=".PhotoDream"
+            android:exported="true"
+            android:label="@string/photo_dream_label"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".InputKeyService"
             android:exported="false"

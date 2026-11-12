@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**Fork note:** for the Quiet Machine work, read the newest section of [HANDOFF.md](HANDOFF.md) first.
+
 Instructions for coding agents (Claude Code, Codex, Gemini CLI, Cursor, Copilot and others) working in
 this repository. People should start with [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md);
 this file repeats their rules in the form an agent needs, and links to them for the detail.
