@@ -97,7 +97,7 @@ final class QuietMachineView extends LinearLayout {
 
     private final Activity activity;
     private final AppAdapter adapter;
-    private final Runnable inputs, classic;
+    private final Runnable inputs;
     private final Config config;
     private final SharedPreferences prefs;
     private final Typeface light, regular, medium, variable;
@@ -123,9 +123,9 @@ final class QuietMachineView extends LinearLayout {
         }
     };
 
-    QuietMachineView(Activity a, AppAdapter apps, Runnable showInputs, Runnable showClassic) {
+    QuietMachineView(Activity a, AppAdapter apps, Runnable showInputs) {
         super(a);
-        activity = a; adapter = apps; inputs = showInputs; classic = showClassic;
+        activity = a; adapter = apps; inputs = showInputs;
         config = Config.load(a);
         prefs = a.getPreferences(0);
         palette(prefs.getBoolean("quiet_dark", true));
