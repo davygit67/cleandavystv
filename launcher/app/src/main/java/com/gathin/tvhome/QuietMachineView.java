@@ -915,11 +915,9 @@ final class QuietMachineView extends LinearLayout {
         }
 
         LinearLayout ambient = card(cards, "Ambient light", Glyph.LIGHT, false);
-        ambient.addView(text("Not connected", 20, regular, MUTED));
+        ambient.addView(text("Your lights", 21, regular, INK));
         ambient.addView(flex());
-        ambient.addView(new Meter(false, 100, null, null), new LayoutParams(-1, d(30)));
-        ambient.addView(scale("—", "—"));
-        TextView none = text("Govee cloud control  ·  open Lights for devices", 9.5f, regular, MUTED);
+        TextView none = text("Control room lights and TV backlight in Lights", 11, regular, MUTED);
         none.setPadding(0, d(6), 0, 0);
         ambient.addView(none);
         space(ambient, 8);
@@ -1133,8 +1131,12 @@ final class QuietMachineView extends LinearLayout {
                         list.addView(deviceRow(tv, true));
                         space(list, 10);
                     }
-                    TextView all = quietButton("All lights on/off", () -> toggleAll(devices));
-                    list.addView(all);
+                    LinearLayout group = row();
+                    group.addView(quietButton("All lights on", () -> toggleAll(devices, true)));
+                    LayoutParams allGap = new LayoutParams(-2, -2);
+                    allGap.setMarginStart(d(10));
+                    group.addView(quietButton("All lights off", () -> toggleAll(devices, false)), allGap);
+                    list.addView(group);
                     space(list, 10);
                     for (GoveeModels.Device d : devices) {
                         if (d == tv) continue;
@@ -1155,66 +1157,80 @@ final class QuietMachineView extends LinearLayout {
         });
     }
 
-    private View deviceRow(GoveeModels.Device d, boolean highlight) {
-        LinearLayout row = column();
-        row.setPadding(d(16), d(14), d(16), d(12));
+    /** D-pad-friendly lighting controls. Each option is an advertised API instance. */
+    private View deviceRow(GoveeModels.Device d, boolean likelyBacklight) {
+        LinearLayout panel = column();
+        panel.setPadding(d(18), d(16), d(18), d(16));
         boolean dark = prefs.getBoolean("quiet_dark", true);
-        row.setBackground(QuietDesign.aluminumPanel(activity,
+        panel.setBackground(QuietDesign.aluminumPanel(activity,
                 dark ? 0xFF28292F : 0xFFF7F6F2,
-                dark ? 0xFF202126 : 0xFFEAE8E1,
-                0x00000000));
-        LinearLayout top = row();
-        TextView name = text(d.name + (d.online ? "" : "  ·  offline"), 13.5f, medium, d.online ? INK : MUTED);
+                dark ? 0xFF202126 : 0xFFEAE8E1, 0x00000000));
+
+        LinearLayout heading = row();
+        TextView name = text(d.name, 17, medium, INK);
         name.setSingleLine();
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        top.addView(name, new LayoutParams(0, -2, 1));
-        top.addView(caps(d.sku, 9, regular, MUTED));
-        row.addView(top);
-        space(row, 4);
-        StringBuilder caps = new StringBuilder();
-        if (d.supports(GoveeModels.CAP_POWER)) caps.append("Power  ");
-        if (d.supports(GoveeModels.CAP_BRIGHTNESS)) caps.append("Brightness  ");
-        if (d.supports(GoveeModels.CAP_COLOR_RGB)) caps.append("Color  ");
-        if (d.supports(GoveeModels.CAP_COLOR_TEMP)) caps.append("Temp  ");
-        if (d.supports(GoveeModels.CAP_SCENE)) caps.append("Scenes");
-        if (caps.length() == 0) caps.append("No controllable capabilities reported");
-        if (highlight) caps.insert(0, "TV backlight  ·  ");
-        row.addView(text(caps.toString().trim(), 10, regular, MUTED));
-        space(row, 8);
-        LinearLayout buttons = row();
-        if (d.supports(GoveeModels.CAP_POWER) && d.online) {
-            TextView on = quietButton("On", () -> power(d, true));
-            TextView off = quietButton("Off", () -> power(d, false));
-            buttons.addView(on);
-            LayoutParams g = new LayoutParams(-2, -2);
-            g.setMarginStart(d(10));
-            buttons.addView(off, g);
-            if (d.supports(GoveeModels.CAP_BRIGHTNESS)) {
-                TextView dim = quietButton("Dim -", () -> nudgeBrightness(d, -10));
-                TextView up = quietButton("Bright +", () -> nudgeBrightness(d, 10));
-                buttons.addView(dim, new LayoutParams(g));
-                buttons.addView(up, new LayoutParams(g));
-            }
-            if (d.supports(GoveeModels.CAP_COLOR_TEMP)) {
-                TextView temp = quietButton("Warmer/cooler", () -> cycleTemp(d));
-                buttons.addView(temp, new LayoutParams(g));
-            }
-            if (d.supports(GoveeModels.CAP_COLOR_RGB)) {
-                TextView warm = quietButton("Warm white", () -> setRgb(d, 255, 190, 120));
-                buttons.addView(warm, new LayoutParams(g));
-            }
-        } else {
-            buttons.addView(text(d.online ? "This model reports no switchable control" : "Offline — controls hidden", 11, regular, MUTED));
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        heading.addView(name, new LayoutParams(0, -2, 1));
+        heading.addView(caps(d.sku, 9.5f, regular, MUTED));
+        panel.addView(heading);
+        if (likelyBacklight) {
+            space(panel, 4);
+            panel.addView(text("POSSIBLE TV BACKLIGHT", 9.5f, medium, MUTED));
         }
-        row.addView(buttons);
-        return row;
+        if (!d.online) {
+            space(panel, 8);
+            panel.addView(text("Reported offline — controls unavailable", 11, regular, MUTED));
+            return panel;
+        }
+        if (d.supports(GoveeModels.CAP_POWER, "powerSwitch")) {
+            LinearLayout group = controlStrip(panel, "POWER");
+            addControl(group, "On", () -> power(d, true));
+            addControl(group, "Off", () -> power(d, false));
+        }
+        if (d.supports(GoveeModels.CAP_BRIGHTNESS, "brightness")) {
+            LinearLayout group = controlStrip(panel, "BRIGHTNESS");
+            for (int pct : new int[]{25, 50, 75, 100})
+                addControl(group, pct + "%", () -> setBrightness(d, pct));
+        }
+        if (d.supports(GoveeModels.CAP_COLOR_TEMP, "colorTemperatureK")) {
+            LinearLayout group = controlStrip(panel, "WHITE TEMPERATURE");
+            addControl(group, "Warm", () -> setTemperature(d, 2700));
+            addControl(group, "Neutral", () -> setTemperature(d, 4000));
+            addControl(group, "Cool", () -> setTemperature(d, 6500));
+        }
+        if (d.supports(GoveeModels.CAP_COLOR_RGB, "colorRgb")) {
+            LinearLayout group = controlStrip(panel, "COLOR");
+            addControl(group, "Amber", () -> setRgb(d, 255, 160, 60));
+            addControl(group, "Blue", () -> setRgb(d, 58, 124, 255));
+            addControl(group, "Violet", () -> setRgb(d, 160, 88, 255));
+            addControl(group, "White", () -> setRgb(d, 255, 255, 255));
+        }
+        if (panel.getChildCount() <= (likelyBacklight ? 2 : 1))
+            panel.addView(text("No supported direct lighting controls reported", 11, regular, MUTED));
+        return panel;
     }
 
-    private void toggleAll(List<GoveeModels.Device> devices) {
-        for (GoveeModels.Device d : devices) {
-            if (d.online && d.supports(GoveeModels.CAP_POWER)) power(d, true);
-        }
-        Toast.makeText(activity, "All lights on (tap Off on a device to switch one off)", Toast.LENGTH_SHORT).show();
+    private LinearLayout controlStrip(LinearLayout panel, String title) {
+        space(panel, 11);
+        panel.addView(caps(title, 9, medium, MUTED));
+        space(panel, 6);
+        LinearLayout controls = row();
+        panel.addView(controls);
+        return controls;
+    }
+
+    private void addControl(LinearLayout controls, String label, Runnable command) {
+        TextView button = quietButton(label, command);
+        LayoutParams lp = new LayoutParams(0, d(39), 1);
+        if (controls.getChildCount() > 0) lp.setMarginStart(d(9));
+        controls.addView(button, lp);
+    }
+
+    /** All On and All Off are separate, explicit actions. */
+    private void toggleAll(List<GoveeModels.Device> devices, boolean on) {
+        for (GoveeModels.Device d : devices)
+            if (d.online && d.supports(GoveeModels.CAP_POWER, "powerSwitch"))
+                power(d, on);
     }
 
     private void power(GoveeModels.Device d, boolean on) {
@@ -1225,27 +1241,24 @@ final class QuietMachineView extends LinearLayout {
                 });
     }
 
-    private final java.util.Map<String, Integer> brightnessGuess = new java.util.HashMap<>();
-    private void nudgeBrightness(GoveeModels.Device d, int delta) {
-        int cur = brightnessGuess.containsKey(d.deviceId) ? brightnessGuess.get(d.deviceId) : 60;
-        int next = Math.max(1, Math.min(100, cur + delta));
-        brightnessGuess.put(d.deviceId, next);
-        govee.control(activity, d, "devices.capabilities.range", "brightness", GoveeApi.brightnessValue(next), false,
-                new GoveeApi.Callback<Void>() {
+    /** Absolute brightness presets avoid claiming to know a status we have not queried. */
+    private void setBrightness(GoveeModels.Device device, int percent) {
+        govee.control(activity, device, GoveeModels.CAP_BRIGHTNESS, "brightness",
+                GoveeApi.brightnessValue(percent), false, new GoveeApi.Callback<Void>() {
                     @Override public void ok(Void v) { }
-                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+                    @Override public void err(String m) {
+                        post(() -> Toast.makeText(activity, "Brightness failed: " + m, Toast.LENGTH_LONG).show());
+                    }
                 });
     }
 
-    private final java.util.Map<String, Integer> tempStep = new java.util.HashMap<>();
-    private void cycleTemp(GoveeModels.Device d) {
-        int[] presets = {2700, 4000, 5000, 6500};
-        int i = tempStep.containsKey(d.deviceId) ? (tempStep.get(d.deviceId) + 1) % presets.length : 0;
-        tempStep.put(d.deviceId, i);
-        govee.control(activity, d, "devices.capabilities.color_setting", "colorTemperature", GoveeApi.colorTempValue(presets[i]), true,
-                new GoveeApi.Callback<Void>() {
-                    @Override public void ok(Void v) { post(() -> Toast.makeText(activity, presets[i] + "K", Toast.LENGTH_SHORT).show()); }
-                    @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
+    private void setTemperature(GoveeModels.Device device, int kelvin) {
+        govee.control(activity, device, GoveeModels.CAP_COLOR_TEMP, "colorTemperatureK",
+                GoveeApi.colorTempValue(kelvin), true, new GoveeApi.Callback<Void>() {
+                    @Override public void ok(Void v) { }
+                    @Override public void err(String m) {
+                        post(() -> Toast.makeText(activity, "Temperature failed: " + m, Toast.LENGTH_LONG).show());
+                    }
                 });
     }
 
