@@ -113,34 +113,54 @@ public final class GoveeApi {
 
     public static JSONObject controlBody(String sku, String device, String type,
                                          String capability, JSONObject value) {
-        JSONObject body = new JSONObject();
-        body.put("requestId", java.util.UUID.randomUUID().toString());
-        body.put("payload", new JSONObject()
-                .put("sku", sku)
-                .put("device", device)
-                .put("capability", new JSONObject()
-                        .put("type", type)
-                        .put("instance", capability)
-                        .put("value", value == null ? new JSONObject() : value)));
-        return body;
+        try {
+            JSONObject body = new JSONObject();
+            body.put("requestId", java.util.UUID.randomUUID().toString());
+            body.put("payload", new JSONObject()
+                    .put("sku", sku)
+                    .put("device", device)
+                    .put("capability", new JSONObject()
+                            .put("type", type)
+                            .put("instance", capability)
+                            .put("value", value == null ? new JSONObject() : value)));
+            return body;
+        } catch (org.json.JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static JSONObject onOffValue(boolean on) {
         // Govee on_off instance "powerSwitch": 1 on / 0 off.
-        return new JSONObject().put("powerSwitch", on ? 1 : 0);
+        try {
+            return new JSONObject().put("powerSwitch", on ? 1 : 0);
+        } catch (org.json.JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static JSONObject brightnessValue(int pct) {
-        return new JSONObject().put("brightness", Math.max(1, Math.min(100, pct)));
+        try {
+            return new JSONObject().put("brightness", Math.max(1, Math.min(100, pct)));
+        } catch (org.json.JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static JSONObject colorTempValue(int kelvin) {
-        return new JSONObject().put("colorTemperature", kelvin);
+        try {
+            return new JSONObject().put("colorTemperature", kelvin);
+        } catch (org.json.JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static JSONObject rgbValue(int r, int g, int b) {
-        return new JSONObject()
-                .put("colorRgb", ((r & 255) << 16) | ((g & 255) << 8) | (b & 255));
+        try {
+            return new JSONObject()
+                    .put("colorRgb", ((r & 255) << 16) | ((g & 255) << 8) | (b & 255));
+        } catch (org.json.JSONException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     // ---- http ----

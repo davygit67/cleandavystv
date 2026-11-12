@@ -955,7 +955,7 @@ final class QuietMachineView extends LinearLayout {
         LayoutParams gap = new LayoutParams(-2, -2);
         gap.setMarginStart(d(10));
         footer.addView(hdmi, gap);
-        pcBtn = quietButton("PC Cast", this::openCast);
+        TextView pcBtn = quietButton("PC Cast", this::openCast);
         footer.addView(pcBtn, new LayoutParams(gap));
         footer.addView(quietButton("TV home", this::openStockHome), new LayoutParams(gap));
         TextView appearance = quietButton(prefs.getBoolean("quiet_dark", true) ? "Light mode" : "Dark mode",
