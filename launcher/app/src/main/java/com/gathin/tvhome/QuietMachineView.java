@@ -1019,6 +1019,13 @@ final class QuietMachineView extends LinearLayout {
         final EditText keyInput = new EditText(activity);
         keyInput.setHint("Paste Govee API key, OK to save");
         keyInput.setSingleLine(true);
+        // Encrypted-storage-only setup: the key is masked, kept out of autofill
+        // and keyboards' suggestion strips, and the field is wiped on save so the
+        // plaintext never rests in the view hierarchy. Only the KeyStore-sealed
+        // blob (GoveeCredentialStore) ever reaches disk.
+        keyInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        keyInput.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
         keyInput.setTextColor(INK);
         keyInput.setHintTextColor(MUTED);
         keyInput.setTypeface(regular);
