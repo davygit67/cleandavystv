@@ -395,60 +395,67 @@ final class QuietMachineView extends LinearLayout {
         if (greeting != null) greeting.setText(QuietMachineModel.greeting(LocalTime.now().getHour()) + ",\n"
                 + (config.greetingName.isEmpty() ? "Davy" : config.greetingName));
     }
+    /** Photo-first TV layout: a calm header, cinematic hero and compact shelf. */
     private void homeContent() {
         LinearLayout header = row();
-        greeting = text("", 24, light, INK);
-        greeting.setLineSpacing(d(4), 1f);
+        greeting = text("", 27, light, INK);
+        greeting.setLineSpacing(d(3), 1f);
         updateGreeting();
-        header.addView(greeting, new LayoutParams(0, -2, 1.3f));
-        View rule = hairline(true, 76);
-        ((LayoutParams) rule.getLayoutParams()).setMarginEnd(d(22));
-        header.addView(rule);
+        header.addView(greeting, new LayoutParams(0, -2, 1));
         LinearLayout time = column();
+        time.setGravity(Gravity.END);
         TextClock date = new TextClock(activity);
         date.setFormat24Hour("EEE d MMM");
         date.setFormat12Hour("EEE d MMM");
         date.setAllCaps(true);
-        date.setLetterSpacing(.16f);
+        date.setLetterSpacing(.12f);
         date.setTypeface(medium);
-        date.setTextSize(10.5f);
-        date.setTextColor(INK);
+        date.setTextSize(10);
+        date.setTextColor(MUTED);
+        date.setGravity(Gravity.END);
         TextClock clock = new TextClock(activity);
         clock.setFormat24Hour("HH:mm");
         clock.setFormat12Hour("HH:mm");
         clock.setTypeface(variable);
-        clock.setFontVariationSettings("'wght' 620");
-        clock.setTextSize(50);
+        clock.setFontVariationSettings("'wght' 530");
+        clock.setTextSize(42);
         clock.setTextColor(INK);
         clock.setIncludeFontPadding(false);
-        clock.setFontFeatureSettings("tnum");
-        time.addView(date);
-        space(time, 8);
-        time.addView(clock);
-        header.addView(time, new LayoutParams(0, -2, 1f));
+        clock.setGravity(Gravity.END);
+        time.addView(date, new LayoutParams(-1, -2));
+        space(time, 3);
+        time.addView(clock, new LayoutParams(-1, -2));
+        header.addView(time, new LayoutParams(d(190), -2));
+        body.addView(header, new LayoutParams(-1, d(88)));
+        space(body, 12);
+
         FrameLayout photograph = new FrameLayout(activity);
         photograph.setTag("photograph");
         photograph.setId(View.generateViewId());
         focusable(photograph, true, () -> {
-            prefs.edit().putInt("quiet_picture", Math.floorMod(prefs.getInt("quiet_picture", 0) + 1, 3)).apply();
+            prefs.edit().putInt("quiet_picture", Math.floorMod(
+                    prefs.getInt("quiet_picture", 0) + 1, 3)).apply();
             loadPhotograph(photograph);
         }, null);
-        header.addView(photograph, new LayoutParams(0, d(150), 2.2f));
-        LinearLayout status = column();
-        status.setGravity(Gravity.END);
+        body.addView(photograph, new LayoutParams(-1, d(192)));
+        space(body, 15);
+
+        LinearLayout shelfHeader = row();
+        shelfHeader.addView(caps("QUICK ACCESS", 9.5f, medium, MUTED));
+        shelfHeader.addView(flex());
         statusDot = new View(activity);
         statusDot.setBackground(frame(GREEN, GREEN, 0, d(4)));
         statusDot.setContentDescription("Network connected");
         statusDot.setVisibility(online() ? VISIBLE : INVISIBLE);
-        status.addView(statusDot, new LayoutParams(d(7), d(7)));
-        LayoutParams sp = new LayoutParams(d(22), d(150));
-        header.addView(status, sp);
-        body.addView(header, new LayoutParams(-1, d(160)));
-        space(body, 32);
+        shelfHeader.addView(statusDot, new LayoutParams(d(7), d(7)));
+        body.addView(shelfHeader);
+        space(body, 8);
 
         List<AppAdapter.Entry> apps = new ArrayList<>();
-        for (AppAdapter.Entry app : adapter.quietEntries()) if (app.kind != AppAdapter.Entry.EMPTY) apps.add(app);
-        boolean fit = apps.size() + 1 <= 5;
+        for (AppAdapter.Entry app : adapter.quietEntries())
+            if (app.kind != AppAdapter.Entry.EMPTY) apps.add(app);
+        // Count all three utility tiles before deciding whether the shelf fits.
+        boolean fit = apps.size() + 3 <= 5;
         HorizontalScrollView scroll = new HorizontalScrollView(activity);
         scroll.setHorizontalScrollBarEnabled(false);
         scroll.setFillViewport(fit);
@@ -457,33 +464,34 @@ final class QuietMachineView extends LinearLayout {
         tiles.setGravity(Gravity.TOP);
         View watch = tile(glyphTile(), "Watch", true, inputs, null);
         watch.setTag("watch");
-        watch.setContentDescription("Watch: live TV and HDMI inputs");
+        watch.setContentDescription("Watch: TV and HDMI inputs");
         inputAnchor = watch;
         defaultFocus = watch;
         tiles.addView(watch, tileParams(fit, false));
         View pc = tile(glyph(Glyph.DISPLAY, INK, false, 30), "PC Cast", true, this::openCast, null);
         pc.setTag("pc-cast");
-        pc.setContentDescription("PC Cast: open the TV screen-mirroring receiver");
+        pc.setContentDescription("PC Cast: screen-mirroring receiver");
         tiles.addView(pc, tileParams(fit, false));
-        View lights = tile(glyph(Glyph.LIGHT, INK, false, 30), "Lights", true, () -> show("Lights"), null);
+        View lights = tile(glyph(Glyph.LIGHT, INK, false, 30), "Lights", true,
+                () -> show("Lights"), null);
         lights.setTag("lights");
-        lights.setContentDescription("Lights: Govee smart lights");
         tiles.addView(lights, tileParams(fit, false));
         for (int i = 0; i < apps.size(); i++) {
             AppAdapter.Entry app = apps.get(i);
-            View t = tile(appArt(app), app.label, false, () -> adapter.quietLaunch(app), app);
+            View t = tile(appArt(app), app.label, false,
+                    () -> adapter.quietLaunch(app), app);
             t.setTag(app.component.flattenToString());
             tiles.addView(t, tileParams(fit, i == apps.size() - 1));
         }
-        // Up from any tile goes to the panorama, never sideways into the rail; Down comes back to WATCH.
-        for (int i = 0; i < tiles.getChildCount(); i++) tiles.getChildAt(i).setNextFocusUpId(photograph.getId());
+        for (int i = 0; i < tiles.getChildCount(); i++)
+            tiles.getChildAt(i).setNextFocusUpId(photograph.getId());
         watch.setId(View.generateViewId());
         photograph.setNextFocusDownId(watch.getId());
         scroll.addView(tiles);
-        body.addView(scroll, new LayoutParams(-1, d(178)));
+        body.addView(scroll, new LayoutParams(-1, d(124)));
         body.addView(flex());
         LinearLayout foot = row();
-        foot.addView(caps("OK  open     ·     Menu  app info     ·     Back  home", 9, regular, MUTED));
+        foot.addView(caps("OK  open    ·    Back  home", 9, regular, MUTED));
         foot.addView(flex());
         credit = caps("", 9, regular, MUTED);
         foot.addView(credit);
@@ -508,12 +516,12 @@ final class QuietMachineView extends LinearLayout {
     private View tile(View art, String label, boolean caps, Runnable action, AppAdapter.Entry app) {
         LinearLayout t = column();
         t.setGravity(Gravity.CENTER_HORIZONTAL);
-        t.setPadding(d(10), d(34), d(10), d(12));
+        t.setPadding(d(9), d(15), d(9), d(6));
         LinearLayout artBox = column();
         artBox.setGravity(Gravity.CENTER);
         artBox.addView(art);
-        t.addView(artBox, new LayoutParams(-1, d(52)));
-        space(t, 14);
+        t.addView(artBox, new LayoutParams(-1, d(46)));
+        space(t, 9);
         TextView name = caps ? caps(label, 11.5f, medium, INK) : text(label, 13.5f, regular, INK);
         name.setGravity(Gravity.CENTER);
         name.setSingleLine();
@@ -523,7 +531,7 @@ final class QuietMachineView extends LinearLayout {
         bar.setBackgroundColor(ORANGE);
         bar.setVisibility(INVISIBLE);
         LayoutParams bp = new LayoutParams(d(58), d(3));
-        bp.topMargin = d(12);
+        bp.topMargin = d(7);
         t.addView(bar, bp);
         focusable(t, true, action, focus -> bar.setVisibility(focus ? VISIBLE : INVISIBLE));
         if (app != null && app.kind == AppAdapter.Entry.APP) t.setOnKeyListener((v, key, e) -> appInfoKey(key, e, app.pkg));
