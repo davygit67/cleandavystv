@@ -139,12 +139,6 @@ public final class GoveeRepository {
         main.postDelayed(pendingFlush, GoveeApi.CONTROL_FLOOR_MS);
     }
 
-    /** The debounced path of {@link #control}: identical, without the urgent flag. */
-    public void controlDebounced(Context c, GoveeModels.Device d, String type, String instance,
-                                 JSONObject value, GoveeApi.Callback<Void> cb) {
-        control(c, d, type, instance, value, false, cb);
-    }
-
     /** Sends the latest pending request, if any, with the key it was scheduled with. */
     private void flushPending() {
         Pending p = pending;

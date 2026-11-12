@@ -1196,7 +1196,7 @@ final class QuietMachineView extends LinearLayout {
         int cur = brightnessGuess.containsKey(d.deviceId) ? brightnessGuess.get(d.deviceId) : 60;
         int next = Math.max(1, Math.min(100, cur + delta));
         brightnessGuess.put(d.deviceId, next);
-        govee.controlDebounced(activity, d, "devices.capabilities.range", "brightness", GoveeApi.brightnessValue(next),
+        govee.control(activity, d, "devices.capabilities.range", "brightness", GoveeApi.brightnessValue(next), false,
                 new GoveeApi.Callback<Void>() {
                     @Override public void ok(Void v) { }
                     @Override public void err(String m) { post(() -> Toast.makeText(activity, "Failed: " + m, Toast.LENGTH_LONG).show()); }
