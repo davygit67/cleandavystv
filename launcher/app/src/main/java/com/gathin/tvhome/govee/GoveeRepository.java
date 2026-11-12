@@ -35,11 +35,16 @@ public final class GoveeRepository {
     private final GoveeCredentialStore store = new GoveeCredentialStore();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable pendingFlush = this::flushPending;
+    /** Latest debounced request; only touched on the main thread. */
     private Pending pending;
     private List<GoveeModels.Device> cache = Collections.emptyList();
     private long cachedAt;
 
+    /** One debounced request. The API key snapshot travels with its request, so a
+     * key rotation between scheduling and sending can never leak one call's key
+     * into another call's body. */
     private static final class Pending {
+        String key;
         String sku, device, type, instance;
         JSONObject value;
         GoveeApi.Callback<Void> cb;
@@ -52,8 +57,10 @@ public final class GoveeRepository {
         this.api = new GoveeApi(net);
     }
 
-    /** Stops the background thread; safe to call more than once. */
+    /** Drops any pending debounced send and stops the background thread. Safe to call more than once. */
     public void shutdown() {
+        main.removeCallbacks(pendingFlush);
+        pending = null;
         if (net instanceof java.util.concurrent.ExecutorService) {
             ((java.util.concurrent.ExecutorService) net).shutdownNow();
         }
@@ -99,8 +106,13 @@ public final class GoveeRepository {
     }
 
     /**
-     * Debounced control: rapid slider moves coalesce into one POST per
-     * CONTROL_FLOOR window; power toggles bypass the queue and send at once.
+     * Sends a control command. Must be called on the main thread.
+     *
+     * <p>Urgent commands (power toggles) send at once. Anything else is
+     * debounced: rapid calls (e.g. brightness slider drags) replace the pending
+     * request and restart a single {@link GoveeApi#CONTROL_FLOOR_MS} timer, so
+     * exactly one POST — the latest values — goes out per burst. Superseded
+     * requests are dropped silently; only the latest callback fires.
      */
     public void control(Context c, GoveeModels.Device d, String type, String instance,
                         JSONObject value, boolean urgent, GoveeApi.Callback<Void> cb) {
@@ -115,6 +127,7 @@ public final class GoveeRepository {
             return;
         }
         Pending p = new Pending();
+        p.key = key;
         p.sku = d.sku;
         p.device = d.deviceId;
         p.type = type;
@@ -126,36 +139,18 @@ public final class GoveeRepository {
         main.postDelayed(pendingFlush, GoveeApi.CONTROL_FLOOR_MS);
     }
 
+    /** The debounced path of {@link #control}: identical, without the urgent flag. */
+    public void controlDebounced(Context c, GoveeModels.Device d, String type, String instance,
+                                 JSONObject value, GoveeApi.Callback<Void> cb) {
+        control(c, d, type, instance, value, false, cb);
+    }
+
+    /** Sends the latest pending request, if any, with the key it was scheduled with. */
     private void flushPending() {
         Pending p = pending;
         pending = null;
         if (p == null) return;
-        // Key is re-read from the store at flush time so rotation works mid-drag.
-        // Note: flush needs a Context; callers pass urgent=false only from UI threads
-        // where the repository was constructed with an application context key copy.
-        // To keep this class Context-free, the control path below uses the last key
-        // via a package-visible hook set by control(). For simplicity and safety we
-        // require callers to re-issue debounced calls with Context; flush is a no-op
-        // if the key vanished (rotation/clear) — the UI shows the error on next action.
-        flushWithKey(p);
-    }
-
-    // Overridden in tests to avoid Android KeyStore.
-    void flushWithKey(Pending p) {
-        // Implemented by control() path: re-dispatch through api with stored key snapshot.
-        // The repository keeps no key copy; instead debounce at the UI layer by calling
-        // control() with urgent=false and letting the LAST call win via main-thread queue.
-        // This flush executes that last call directly.
-        api.controlAsync(lastKey, GoveeApi.controlBody(p.sku, p.device, p.type, p.instance, p.value), p.cb);
-    }
-
-    private String lastKey = "";
-
-    /** UI-layer helper: records the key snapshot for the debounced flush. */
-    public void controlDebounced(Context c, GoveeModels.Device d, String type, String instance,
-                                 JSONObject value, GoveeApi.Callback<Void> cb) {
-        lastKey = store.get(c);
-        control(c, d, type, instance, value, false, cb);
+        api.controlAsync(p.key, GoveeApi.controlBody(p.sku, p.device, p.type, p.instance, p.value), p.cb);
     }
 
     private GoveeApi.Callback<Void> onMain(GoveeApi.Callback<Void> cb) {
